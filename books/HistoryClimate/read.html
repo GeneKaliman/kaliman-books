@@ -1,38 +1,168 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>От каменного века до железного — Читать онлайн</title>
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 2rem;
-      background: #f9f9f9;
+    body { margin: 0; font-family: Arial, sans-serif; background:#f4f5f7; color:#222; }
+    .toolbar {
+      position: sticky; top: 0; z-index: 5;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 10px; background: #ffffff; border-bottom: 1px solid #e5e7eb;
     }
-    h1 {
-      text-align: center;
+    .toolbar button, .toolbar input {
+      font-size: 14px; padding: 6px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff;
     }
-    embed {
-      width: 100%;
-      height: 800px;
-      border: 1px solid #ccc;
-      margin-top: 2rem;
-    }
-    .comments {
-      margin-top: 3rem;
+    .toolbar button:hover { background: #f1f5f9; cursor: pointer; }
+    .page-info { margin-left: 6px; }
+    .viewer-wrap { display: grid; place-items: center; padding: 18px; }
+    canvas { box-shadow: 0 2px 10px rgba(0,0,0,.08); background:#fff; border-radius:8px; }
+    @media (max-width: 700px) {
+      .toolbar { gap: 6px; }
+      canvas { width: 100% !important; height: auto !important; }
     }
   </style>
 </head>
 <body>
 
-  <h1>От каменного века до железного</h1>
+  <div class="toolbar">
+    <button id="prevBtn">← Предыдущая</button>
+    <button id="nextBtn">Следующая →</button>
 
-  <embed src="HistoryClimate.pdf" type="application/pdf">
+    <span class="page-info">
+      Стр. <input id="pageInput" type="number" min="1" value="1" style="width:70px" />
+      из <span id="pageCount">—</span>
+    </span>
 
-  <div class="comments" id="comments">
-    <h2>Комментарии</h2>
-    <p>Вы можете оставить отзыв, воспользовавшись <a href="https://forms.gle/YOUR_FORM_LINK" target="_blank">этой формой</a>.</p>
+    <span style="flex:1"></span>
+
+    <button id="zoomOut">–</button>
+    <span>Масштаб</span>
+    <button id="zoomIn">+</button>
+    <button id="fitWidth">По ширине</button>
+    <button id="fitPage">Страница</button>
+
+    <span style="flex:1"></span>
+
+    <a href="History_Climate.pdf" download>
+      <button>⬇️ Скачать PDF</button>
+    </a>
   </div>
 
+  <div class="viewer-wrap">
+    <canvas id="pdfCanvas"></canvas>
+  </div>
+
+  <!-- PDF.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.js"></script>
+  <script>
+    // Configure worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.js";
+
+    const url = "History_Climate.pdf"; // same folder as this file
+    const canvas = document.getElementById("pdfCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const pageInput = document.getElementById("pageInput");
+    const pageCountSpan = document.getElementById("pageCount");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const zoomInBtn = document.getElementById("zoomIn");
+    const zoomOutBtn = document.getElementById("zoomOut");
+    const fitWidthBtn = document.getElementById("fitWidth");
+    const fitPageBtn = document.getElementById("fitPage");
+
+    let pdfDoc = null;
+    let pageNum = 1;
+    let scale = 1.2;        // default zoom
+    let rendering = false;
+    let pendingPage = null;
+
+    function renderPage(num) {
+      rendering = true;
+      pdfDoc.getPage(num).then(function(page) {
+        const viewport = page.getViewport({ scale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const renderContext = { canvasContext: ctx, viewport };
+        const renderTask = page.render(renderContext);
+        renderTask.promise.then(() => {
+          rendering = false;
+          pageInput.value = pageNum;
+          if (pendingPage !== null) { renderPage(pendingPage); pendingPage = null; }
+        });
+      });
+    }
+
+    function queueRender(num) {
+      if (rendering) pendingPage = num;
+      else renderPage(num);
+    }
+
+    function showPage(num) {
+      if (num < 1 || num > pdfDoc.numPages) return;
+      pageNum = num;
+      queueRender(pageNum);
+    }
+
+    pdfjsLib.getDocument(url).promise.then(function(doc) {
+      pdfDoc = doc;
+      pageCountSpan.textContent = pdfDoc.numPages;
+      const hashPage = parseInt(location.hash.replace("#p=", ""), 10);
+      if (!isNaN(hashPage)) pageNum = Math.max(1, Math.min(hashPage, pdfDoc.numPages));
+      renderPage(pageNum);
+    });
+
+    // Controls
+    prevBtn.onclick = () => showPage(pageNum - 1);
+    nextBtn.onclick = () => showPage(pageNum + 1);
+    pageInput.onchange = () => showPage(parseInt(pageInput.value, 10) || pageNum);
+
+    zoomInBtn.onclick  = () => { scale = Math.min(scale + 0.15, 4);  renderPage(pageNum); };
+    zoomOutBtn.onclick = () => { scale = Math.max(scale - 0.15, 0.25); renderPage(pageNum); };
+
+    function fitWidth() {
+      // Fit to viewport width
+      const vw = Math.min(document.documentElement.clientWidth, 1100) - 40; // body padding
+      pdfDoc.getPage(pageNum).then(page => {
+        const unscaled = page.getViewport({ scale: 1 });
+        scale = vw / unscaled.width;
+        renderPage(pageNum);
+      });
+    }
+    function fitPage() {
+      pdfDoc.getPage(pageNum).then(page => {
+        const unscaled = page.getViewport({ scale: 1 });
+        const vw = Math.min(document.documentElement.clientWidth, 1100) - 40;
+        const vh = window.innerHeight - 120; // toolbar + paddings
+        const s1 = vw / unscaled.width;
+        const s2 = vh / unscaled.height;
+        scale = Math.min(s1, s2);
+        renderPage(pageNum);
+      });
+    }
+    fitWidthBtn.onclick = fitWidth;
+    fitPageBtn.onclick = fitPage;
+
+    // Keyboard: ← → and PgUp/PgDn
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft" || e.key === "PageUp")  showPage(pageNum - 1);
+      if (e.key === "ArrowRight" || e.key === "PageDown") showPage(pageNum + 1);
+      if (e.key === "+") { scale = Math.min(scale + 0.15, 4); renderPage(pageNum); }
+      if (e.key === "-") { scale = Math.max(scale - 0.15, 0.25); renderPage(pageNum); }
+    });
+
+    // Update URL hash so you can share a "page" link
+    function updateHash() { history.replaceState(null, "", "#p=" + pageNum); }
+    ['click','change'].forEach(ev=>{
+      document.addEventListener(ev, updateHash, true);
+    });
+
+    // Refit on resize
+    window.addEventListener('resize', () => { /* keep scale; optionally call fitWidth(); */ });
+  </script>
 </body>
 </html>
