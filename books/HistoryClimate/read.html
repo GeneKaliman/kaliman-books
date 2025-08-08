@@ -5,164 +5,85 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>От каменного века до железного — Читать онлайн</title>
   <style>
-    body { margin: 0; font-family: Arial, sans-serif; background:#f4f5f7; color:#222; }
+    body { margin:0; font-family: Arial, sans-serif; background:#f4f5f7; color:#222; }
     .toolbar {
-      position: sticky; top: 0; z-index: 5;
-      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-      padding: 10px; background: #ffffff; border-bottom: 1px solid #e5e7eb;
+      position: sticky; top:0; z-index:5;
+      display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+      padding:10px; background:#fff; border-bottom:1px solid #e5e7eb;
     }
     .toolbar button, .toolbar input {
-      font-size: 14px; padding: 6px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff;
+      font-size:14px; padding:6px 10px; border-radius:6px; border:1px solid #cbd5e1; background:#fff;
     }
-    .toolbar button:hover { background: #f1f5f9; cursor: pointer; }
-    .page-info { margin-left: 6px; }
-    .viewer-wrap { display: grid; place-items: center; padding: 18px; }
-    canvas { box-shadow: 0 2px 10px rgba(0,0,0,.08); background:#fff; border-radius:8px; }
-    @media (max-width: 700px) {
-      .toolbar { gap: 6px; }
-      canvas { width: 100% !important; height: auto !important; }
-    }
+    .toolbar button:hover { background:#f1f5f9; cursor:pointer; }
+    .page-info { margin-left:6px; }
+    .frame-wrap { height: calc(100vh - 64px); }
+    iframe { width:100%; height:100%; border:0; background:#fff; }
   </style>
 </head>
 <body>
-
   <div class="toolbar">
     <button id="prevBtn">← Предыдущая</button>
     <button id="nextBtn">Следующая →</button>
-
     <span class="page-info">
       Стр. <input id="pageInput" type="number" min="1" value="1" style="width:70px" />
-      из <span id="pageCount">—</span>
     </span>
-
     <span style="flex:1"></span>
-
-    <button id="zoomOut">–</button>
-    <span>Масштаб</span>
-    <button id="zoomIn">+</button>
     <button id="fitWidth">По ширине</button>
     <button id="fitPage">Страница</button>
-
-    <span style="flex:1"></span>
-
-    <a href="History_Climate.pdf" download>
-      <button>⬇️ Скачать PDF</button>
-    </a>
   </div>
 
-  <div class="viewer-wrap">
-    <canvas id="pdfCanvas"></canvas>
+  <div class="frame-wrap">
+    <iframe id="viewer"
+      src="/kaliman-books/books/HistoryClimate/History_Climate.pdf#page=1&zoom=page-width"
+      title="PDF"></iframe>
   </div>
 
-  <!-- PDF.js from CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.js"></script>
   <script>
-    // Configure worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.js";
-
-    const url = "/kaliman-books/books/HistoryClimate/History_Climate.pdf"; // same folder as this file
-    const canvas = document.getElementById("pdfCanvas");
-    const ctx = canvas.getContext("2d");
-
+    const pdfPath = "/kaliman-books/books/HistoryClimate/History_Climate.pdf";
+    const iframe = document.getElementById("viewer");
     const pageInput = document.getElementById("pageInput");
-    const pageCountSpan = document.getElementById("pageCount");
     const prevBtn = document.getElementById("prevBtn");
     const nextBtn = document.getElementById("nextBtn");
-    const zoomInBtn = document.getElementById("zoomIn");
-    const zoomOutBtn = document.getElementById("zoomOut");
     const fitWidthBtn = document.getElementById("fitWidth");
     const fitPageBtn = document.getElementById("fitPage");
 
-    let pdfDoc = null;
-    let pageNum = 1;
-    let scale = 1.2;        // default zoom
-    let rendering = false;
-    let pendingPage = null;
+    let page = 1;
+    let zoom = "page-width"; // or "page-fit"
 
-    function renderPage(num) {
-      rendering = true;
-      pdfDoc.getPage(num).then(function(page) {
-        const viewport = page.getViewport({ scale });
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-
-        const renderContext = { canvasContext: ctx, viewport };
-        const renderTask = page.render(renderContext);
-        renderTask.promise.then(() => {
-          rendering = false;
-          pageInput.value = pageNum;
-          if (pendingPage !== null) { renderPage(pendingPage); pendingPage = null; }
-        });
-      });
+    function update() {
+      iframe.src = `${pdfPath}#page=${page}&zoom=${zoom}`;
+      history.replaceState(null, "", `#p=${page}`);
+      pageInput.value = page;
     }
 
-    function queueRender(num) {
-      if (rendering) pendingPage = num;
-      else renderPage(num);
+    function changePage(delta) {
+      page = Math.max(1, page + delta);
+      update();
     }
 
-    function showPage(num) {
-      if (num < 1 || num > pdfDoc.numPages) return;
-      pageNum = num;
-      queueRender(pageNum);
-    }
+    // init from hash if present
+    const hashPage = parseInt(location.hash.replace("#p=", ""), 10);
+    if (!isNaN(hashPage) && hashPage > 0) page = hashPage;
+    update();
 
-    pdfjsLib.getDocument(url).promise.then(function(doc) {
-      pdfDoc = doc;
-      pageCountSpan.textContent = pdfDoc.numPages;
-      const hashPage = parseInt(location.hash.replace("#p=", ""), 10);
-      if (!isNaN(hashPage)) pageNum = Math.max(1, Math.min(hashPage, pdfDoc.numPages));
-      renderPage(pageNum);
+    // controls
+    prevBtn.addEventListener("click", () => changePage(-1));
+    nextBtn.addEventListener("click", () => changePage(1));
+    pageInput.addEventListener("change", () => {
+      const n = parseInt(pageInput.value, 10);
+      if (!isNaN(n) && n > 0) { page = n; update(); } else pageInput.value = page;
     });
 
-    // Controls
-    prevBtn.onclick = () => showPage(pageNum - 1);
-    nextBtn.onclick = () => showPage(pageNum + 1);
-    pageInput.onchange = () => showPage(parseInt(pageInput.value, 10) || pageNum);
+    fitWidthBtn.addEventListener("click", () => { zoom = "page-width"; update(); });
+    fitPageBtn.addEventListener("click",  () => { zoom = "page-fit";   update(); });
 
-    zoomInBtn.onclick  = () => { scale = Math.min(scale + 0.15, 4);  renderPage(pageNum); };
-    zoomOutBtn.onclick = () => { scale = Math.max(scale - 0.15, 0.25); renderPage(pageNum); };
-
-    function fitWidth() {
-      // Fit to viewport width
-      const vw = Math.min(document.documentElement.clientWidth, 1100) - 40; // body padding
-      pdfDoc.getPage(pageNum).then(page => {
-        const unscaled = page.getViewport({ scale: 1 });
-        scale = vw / unscaled.width;
-        renderPage(pageNum);
-      });
-    }
-    function fitPage() {
-      pdfDoc.getPage(pageNum).then(page => {
-        const unscaled = page.getViewport({ scale: 1 });
-        const vw = Math.min(document.documentElement.clientWidth, 1100) - 40;
-        const vh = window.innerHeight - 120; // toolbar + paddings
-        const s1 = vw / unscaled.width;
-        const s2 = vh / unscaled.height;
-        scale = Math.min(s1, s2);
-        renderPage(pageNum);
-      });
-    }
-    fitWidthBtn.onclick = fitWidth;
-    fitPageBtn.onclick = fitPage;
-
-    // Keyboard: ← → and PgUp/PgDn
+    // keyboard
     document.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowLeft" || e.key === "PageUp")  showPage(pageNum - 1);
-      if (e.key === "ArrowRight" || e.key === "PageDown") showPage(pageNum + 1);
-      if (e.key === "+") { scale = Math.min(scale + 0.15, 4); renderPage(pageNum); }
-      if (e.key === "-") { scale = Math.max(scale - 0.15, 0.25); renderPage(pageNum); }
+      if (e.key === "ArrowLeft" || e.key === "PageUp")   changePage(-1);
+      if (e.key === "ArrowRight"|| e.key === "PageDown") changePage(1);
+      if (e.key === "+") { zoom = "150"; update(); } // quick zoom in
+      if (e.key === "-") { zoom = "100"; update(); } // quick zoom out
     });
-
-    // Update URL hash so you can share a "page" link
-    function updateHash() { history.replaceState(null, "", "#p=" + pageNum); }
-    ['click','change'].forEach(ev=>{
-      document.addEventListener(ev, updateHash, true);
-    });
-
-    // Refit on resize
-    window.addEventListener('resize', () => { /* keep scale; optionally call fitWidth(); */ });
   </script>
 </body>
 </html>
