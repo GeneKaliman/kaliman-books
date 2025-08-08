@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Геннадий Калиман - Книга</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -16,85 +17,79 @@
 
     h1 {
       text-align: center;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       font-size: 26px;
     }
 
+    /* BIO */
     .container {
       display: flex;
       gap: 15px;
       align-items: flex-start;
       background: #fff;
-      padding: 15px;
+      padding: 12px;                 /* tighter */
       border-radius: 12px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      margin-bottom: 20px;
+      margin-bottom: 15px;           /* tighter */
     }
-
-    .photo {
-      flex: 0 0 320px;
-    }
-
+    .photo { flex: 0 0 310px; }
     .photo img {
       width: 100%;
       object-fit: cover;
       border-radius: 10px;
+      display: block;
     }
+    .bio { flex: 1; }
+    .bio p { margin-bottom: 0.7em; font-size: 15.5px; }
 
-    .bio {
-      flex: 1;
-    }
-
-    .bio p {
-      margin-bottom: 0.8em;
-      font-size: 15.5px;
-    }
-
+    /* BOOK */
     .book-section {
       background: #fff;
-      padding: 15px;
+      padding: 12px;                 /* tighter */
       border-radius: 12px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
-
     .book-title {
       font-size: 17px;
       font-weight: bold;
-      margin-bottom: 10px;
+      margin-bottom: 8px;            /* tighter */
       color: #222;
       text-align: center;
+      white-space: nowrap;           /* keep on one line */
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-
     .book-layout {
       display: flex;
       flex-wrap: wrap;
-      gap: 25px;
+      gap: 18px;                     /* tighter */
       align-items: flex-start;
       justify-content: center;
     }
-
     .book-cover {
-      width: 170px;
+      width: 165px;                  /* a hair smaller */
       border-radius: 8px;
+      display: block;
     }
-
     .links-vertical {
       display: flex;
       flex-direction: column;
       justify-content: center;
       font-size: 15px;
     }
-
     .links-vertical a {
-      margin: 8px 0;
+      margin: 6px 0;                 /* tighter */
       text-decoration: none;
       color: #003366;
       font-weight: bold;
     }
+    .links-vertical a:hover { text-decoration: underline; color: #0056b3; }
 
-    .links-vertical a:hover {
-      text-decoration: underline;
-      color: #0056b3;
+    /* Responsive tweak */
+    @media (max-width: 720px) {
+      .container { flex-direction: column; }
+      .photo { flex: 0 0 auto; }
+      .book-layout { justify-content: flex-start; }
     }
   </style>
 </head>
@@ -102,9 +97,10 @@
 
   <h1>Геннадий Калиман</h1>
 
+  <!-- BIO -->
   <div class="container">
     <div class="photo">
-      <img src="GeneKaliman.jpg" alt="Геннадий Калиман">
+      <img src="GeneKaliman.jpg" alt="Геннадий Калиман" />
     </div>
     <div class="bio">
       <p>
@@ -132,8 +128,9 @@
     </div>
   </div>
 
+  <!-- BOOK -->
   <div class="book-section">
-    <div class="book-title">От каменного века до века железа</div>
+    <div class="book-title">От каменного века до железного</div>
     <div class="book-layout">
       <div>
         <a href="books/HistoryClimate/read.html">
