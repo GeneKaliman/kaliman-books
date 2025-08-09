@@ -6,7 +6,6 @@
   <title>Читать книгу — История климата</title>
   <style>
     body { margin: 0; font-family: Arial, sans-serif; background: #f4f5f7; color: #222; }
-    /* Toolbar styling */
     .toolbar {
       position: sticky;
       top: 0;
@@ -20,7 +19,8 @@
       border-bottom: 1px solid #e5e7eb;
     }
     .toolbar button,
-    .toolbar input {
+    .toolbar input,
+    .toolbar select {
       font-size: 14px;
       padding: 6px 10px;
       border-radius: 6px;
@@ -31,7 +31,6 @@
       background: #f1f5f9;
       cursor: pointer;
     }
-    /* Container for PDF canvas */
     .canvas-wrap {
       height: calc(100vh - 54px);
       overflow: auto;
@@ -42,8 +41,6 @@
       margin: 0 auto;
       display: block;
     }
-
-    /* Responsive adjustments for small screens */
     @media (max-width: 600px) {
       .toolbar button,
       .toolbar input,
@@ -57,45 +54,35 @@
 </head>
 <body>
   <div class="toolbar">
-    <button id="prev">← Предыдущая</button>
-    <button id="next">Следующая →</button>
+    <button id="first" title="В начало">⏮</button>
+    <button id="prev" title="Предыдущая">←</button>
+    <button id="next" title="Следующая">→</button>
+    <button id="last" title="В конец">⏭</button>
     <span>Стр. <input id="page" type="number" min="1" value="1" style="width:70px" /></span>
     <span id="total-pages"></span>
     <span style="flex:1"></span>
-    <!-- Table of contents dropdown. Selecting an entry jumps to that page. -->
-    <select id="toc" style="margin-right: 8px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px;">
+    <select id="toc">
       <option value="" disabled selected>Содержание…</option>
     </select>
-    <button id="fitWidth">По ширине</button>
-    <button id="fitHeight">Страница</button>
+    <button id="fitPage">Во всю страницу</button>
+    <button id="fitOriginal">100%</button>
+    <button id="home">На главную</button>
   </div>
 
   <div class="canvas-wrap">
     <canvas id="pdf-canvas"></canvas>
   </div>
 
-  <!-- Load PDF.js library (includes both viewer and worker scripts) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js"></script>
   <script>
-    // Set the worker source for PDF.js
     pdfjsLib.GlobalWorkerOptions.workerSrc = 
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
-    // Relative URL to your PDF (same directory as this HTML file)
     const url = 'History_Climate.pdf';
-
-    let pdfDoc = null;
-    let pageNum = 1;
-    let totalPages = 0;
-    let scale = 1.0;
-    let originalPageWidth = null;
-    let originalPageHeight = null;
-
-    // Keep track of whether we've applied a stored zoom mode on first render
+    let pdfDoc = null, pageNum = 1, totalPages = 0, scale = 1.0;
+    let originalPageWidth = null, originalPageHeight = null;
     let initialZoomApplied = false;
-
-    // Retrieve previously chosen zoom mode from localStorage (if any)
     let zoomMode = localStorage.getItem('zoomMode') || '';
 
     const canvas = document.getElementById('pdf-canvas');
@@ -104,53 +91,47 @@
     const totalPagesSpan = document.getElementById('total-pages');
     const tocSelect = document.getElementById('toc');
 
-    // Function to render a given page number
     function renderPage(num) {
       pdfDoc.getPage(num).then(function(page) {
-        // If we haven't stored the original page dimensions yet, do it now
         if (!originalPageWidth || !originalPageHeight) {
           const viewport1 = page.getViewport({ scale: 1.0 });
           originalPageWidth = viewport1.width;
           originalPageHeight = viewport1.height;
-          // Apply stored zoom preference only once after original dimensions are known
           if (!initialZoomApplied && zoomMode) {
-            if (zoomMode === 'width') {
-              const containerWidth = canvas.parentElement.clientWidth;
-              scale = containerWidth / originalPageWidth;
-            } else if (zoomMode === 'height') {
-              const containerHeight = canvas.parentElement.clientHeight;
-              scale = containerHeight / originalPageHeight;
-            }
+            applyZoomMode(zoomMode);
             initialZoomApplied = true;
           }
         }
-        // Calculate the viewport based on current scale
         const viewport = page.getViewport({ scale: scale });
         canvas.height = viewport.height;
         canvas.width = viewport.width;
-        const renderContext = {
-          canvasContext: ctx,
-          viewport: viewport
-        };
-        page.render(renderContext);
+        page.render({ canvasContext: ctx, viewport: viewport });
       });
-      // Update the page number input
       pageInput.value = num;
     }
 
-    // Load the PDF document
+    function applyZoomMode(mode) {
+      if (!originalPageWidth || !originalPageHeight) return;
+      if (mode === 'page') {
+        const container = canvas.parentElement;
+        const hRatio = container.clientWidth / originalPageWidth;
+        const vRatio = container.clientHeight / originalPageHeight;
+        scale = Math.min(hRatio, vRatio);
+      } else if (mode === '100%') {
+        scale = 1.0;
+      }
+      zoomMode = mode;
+      localStorage.setItem('zoomMode', mode);
+      renderPage(pageNum);
+    }
+
     pdfjsLib.getDocument(url).promise.then(function(pdf) {
       pdfDoc = pdf;
       totalPages = pdf.numPages;
-      document.getElementById('page').max = totalPages;
+      pageInput.max = totalPages;
       totalPagesSpan.textContent = `/ ${totalPages}`;
-      // Initially render the first page
       renderPage(pageNum);
 
-      // Populate table of contents once PDF is loaded. These entries were extracted
-      // programmatically using PyMuPDF and inserted here. Each entry contains
-      // a human-readable title and its starting page number (1-based). Feel free to
-      // adjust titles or pages if needed.
       const tocEntries = [
         { title: 'Введение', page: 3 },
         { title: 'Глава 1. Климат и история', page: 5 },
@@ -172,85 +153,23 @@
       }
     });
 
-    // Button event handlers
-    document.getElementById('prev').addEventListener('click', function() {
-      if (pageNum <= 1) return;
-      pageNum--;
-      renderPage(pageNum);
+    document.getElementById('first').addEventListener('click', () => { pageNum = 1; renderPage(pageNum); });
+    document.getElementById('prev').addEventListener('click', () => { if (pageNum > 1) { pageNum--; renderPage(pageNum); } });
+    document.getElementById('next').addEventListener('click', () => { if (pageNum < totalPages) { pageNum++; renderPage(pageNum); } });
+    document.getElementById('last').addEventListener('click', () => { pageNum = totalPages; renderPage(pageNum); });
+    pageInput.addEventListener('change', () => {
+      const p = parseInt(pageInput.value, 10);
+      if (!isNaN(p) && p >= 1 && p <= totalPages) { pageNum = p; renderPage(pageNum); } else { pageInput.value = pageNum; }
     });
-    document.getElementById('next').addEventListener('click', function() {
-      if (pageNum >= totalPages) return;
-      pageNum++;
-      renderPage(pageNum);
-    });
-    // Jump to first page
-    document.getElementById('first').addEventListener('click', function() {
-      pageNum = 1;
-      renderPage(pageNum);
-    });
-    // Jump to last page
-    document.getElementById('last').addEventListener('click', function() {
-      if (totalPages > 0) {
-        pageNum = totalPages;
-        renderPage(pageNum);
-      }
-    });
-    // Page number input change
-    pageInput.addEventListener('change', function() {
-      const desiredPage = parseInt(pageInput.value, 10);
-      if (!isNaN(desiredPage) && desiredPage >= 1 && desiredPage <= totalPages) {
-        pageNum = desiredPage;
-        renderPage(pageNum);
-      } else {
-        pageInput.value = pageNum;
-      }
-    });
-    // Fit to width
-    document.getElementById('fitWidth').addEventListener('click', function() {
-      if (!originalPageWidth) return;
-      const containerWidth = canvas.parentElement.clientWidth;
-      scale = containerWidth / originalPageWidth;
-      zoomMode = 'width';
-      localStorage.setItem('zoomMode', 'width');
-      renderPage(pageNum);
-    });
-    // Fit to full height (page fit)
-    document.getElementById('fitHeight').addEventListener('click', function() {
-      if (!originalPageHeight) return;
-      const containerHeight = canvas.parentElement.clientHeight;
-      scale = containerHeight / originalPageHeight;
-      zoomMode = 'height';
-      localStorage.setItem('zoomMode', 'height');
-      renderPage(pageNum);
-    });
-    // Home button: return to home page (index.html at repository root)
-    document.getElementById('home').addEventListener('click', function() {
-      // Adjust the relative path as needed. From books/HistoryClimate/ this goes to the root index.
-      window.location.href = '../../index.html';
-    });
-    // Table of contents change handler
-    tocSelect.addEventListener('change', function() {
-      const p = parseInt(this.value, 10);
-      if (!isNaN(p)) {
-        pageNum = p;
-        renderPage(pageNum);
-      }
-    });
-    // Keyboard navigation
+    document.getElementById('fitPage').addEventListener('click', () => applyZoomMode('page'));
+    document.getElementById('fitOriginal').addEventListener('click', () => applyZoomMode('100%'));
+    document.getElementById('home').addEventListener('click', () => { window.location.href = '../../index.html'; });
+    tocSelect.addEventListener('change', function() { const p = parseInt(this.value, 10); if (!isNaN(p)) { pageNum = p; renderPage(pageNum); } });
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-        if (pageNum > 1) {
-          pageNum--;
-          renderPage(pageNum);
-        }
-      }
-      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
-        if (pageNum < totalPages) {
-          pageNum++;
-          renderPage(pageNum);
-        }
-      }
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') { if (pageNum > 1) { pageNum--; renderPage(pageNum); } }
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') { if (pageNum < totalPages) { pageNum++; renderPage(pageNum); } }
     });
   </script>
 </body>
+</html>
 </html>
