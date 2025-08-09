@@ -12,6 +12,7 @@
       top: 0;
       z-index: 5;
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       align-items: center;
       padding: 10px;
@@ -40,6 +41,17 @@
       background: #fff;
       margin: 0 auto;
       display: block;
+    }
+
+    /* Responsive adjustments for small screens */
+    @media (max-width: 600px) {
+      .toolbar button,
+      .toolbar input,
+      .toolbar select {
+        flex: 1 1 auto;
+        margin-top: 4px;
+      }
+      .toolbar span { flex: 1 1 100%; }
     }
   </style>
 </head>
@@ -80,6 +92,12 @@
     let originalPageWidth = null;
     let originalPageHeight = null;
 
+    // Keep track of whether we've applied a stored zoom mode on first render
+    let initialZoomApplied = false;
+
+    // Retrieve previously chosen zoom mode from localStorage (if any)
+    let zoomMode = localStorage.getItem('zoomMode') || '';
+
     const canvas = document.getElementById('pdf-canvas');
     const ctx = canvas.getContext('2d');
     const pageInput = document.getElementById('page');
@@ -94,6 +112,17 @@
           const viewport1 = page.getViewport({ scale: 1.0 });
           originalPageWidth = viewport1.width;
           originalPageHeight = viewport1.height;
+          // Apply stored zoom preference only once after original dimensions are known
+          if (!initialZoomApplied && zoomMode) {
+            if (zoomMode === 'width') {
+              const containerWidth = canvas.parentElement.clientWidth;
+              scale = containerWidth / originalPageWidth;
+            } else if (zoomMode === 'height') {
+              const containerHeight = canvas.parentElement.clientHeight;
+              scale = containerHeight / originalPageHeight;
+            }
+            initialZoomApplied = true;
+          }
         }
         // Calculate the viewport based on current scale
         const viewport = page.getViewport({ scale: scale });
@@ -154,6 +183,18 @@
       pageNum++;
       renderPage(pageNum);
     });
+    // Jump to first page
+    document.getElementById('first').addEventListener('click', function() {
+      pageNum = 1;
+      renderPage(pageNum);
+    });
+    // Jump to last page
+    document.getElementById('last').addEventListener('click', function() {
+      if (totalPages > 0) {
+        pageNum = totalPages;
+        renderPage(pageNum);
+      }
+    });
     // Page number input change
     pageInput.addEventListener('change', function() {
       const desiredPage = parseInt(pageInput.value, 10);
@@ -169,6 +210,8 @@
       if (!originalPageWidth) return;
       const containerWidth = canvas.parentElement.clientWidth;
       scale = containerWidth / originalPageWidth;
+      zoomMode = 'width';
+      localStorage.setItem('zoomMode', 'width');
       renderPage(pageNum);
     });
     // Fit to full height (page fit)
@@ -176,7 +219,14 @@
       if (!originalPageHeight) return;
       const containerHeight = canvas.parentElement.clientHeight;
       scale = containerHeight / originalPageHeight;
+      zoomMode = 'height';
+      localStorage.setItem('zoomMode', 'height');
       renderPage(pageNum);
+    });
+    // Home button: return to home page (index.html at repository root)
+    document.getElementById('home').addEventListener('click', function() {
+      // Adjust the relative path as needed. From books/HistoryClimate/ this goes to the root index.
+      window.location.href = '../../index.html';
     });
     // Table of contents change handler
     tocSelect.addEventListener('change', function() {
