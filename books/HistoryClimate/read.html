@@ -50,6 +50,10 @@
     <span>Стр. <input id="page" type="number" min="1" value="1" style="width:70px" /></span>
     <span id="total-pages"></span>
     <span style="flex:1"></span>
+    <!-- Table of contents dropdown. Selecting an entry jumps to that page. -->
+    <select id="toc" style="margin-right: 8px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px;">
+      <option value="" disabled selected>Содержание…</option>
+    </select>
     <button id="fitWidth">По ширине</button>
     <button id="fitHeight">Страница</button>
   </div>
@@ -80,6 +84,7 @@
     const ctx = canvas.getContext('2d');
     const pageInput = document.getElementById('page');
     const totalPagesSpan = document.getElementById('total-pages');
+    const tocSelect = document.getElementById('toc');
 
     // Function to render a given page number
     function renderPage(num) {
@@ -112,6 +117,29 @@
       totalPagesSpan.textContent = `/ ${totalPages}`;
       // Initially render the first page
       renderPage(pageNum);
+
+      // Populate table of contents once PDF is loaded. These entries were extracted
+      // programmatically using PyMuPDF and inserted here. Each entry contains
+      // a human-readable title and its starting page number (1-based). Feel free to
+      // adjust titles or pages if needed.
+      const tocEntries = [
+        { title: 'Глава 1. Климат и история', page: 5 },
+        { title: 'Глава 2. Эти таинственные шумеры', page: 37 },
+        { title: 'Глава 3. Убейдцы и шумеры', page: 71 },
+        { title: 'Глава 4. Конец периода Джемдет-Наср.', page: 110 },
+        { title: 'Глава 5. Войны номов', page: 132 },
+        { title: 'Глава 6. Расцвет и гибель Аккадского царства', page: 150 },
+        { title: 'Глава 7. Возвышение Ура и появление амореев', page: 166 },
+        { title: 'Глава 8. Ближний Восток в ХVI-ХIV веках до н. э.', page: 193 },
+        { title: 'Глава 9. Коллапс бронзового века', page: 218 },
+        { title: 'Глава 10. Современные изменения климата', page: 254 }
+      ];
+      for (const entry of tocEntries) {
+        const opt = document.createElement('option');
+        opt.value = entry.page;
+        opt.textContent = entry.title;
+        tocSelect.appendChild(opt);
+      }
     });
 
     // Button event handlers
@@ -148,6 +176,14 @@
       const containerHeight = canvas.parentElement.clientHeight;
       scale = containerHeight / originalPageHeight;
       renderPage(pageNum);
+    });
+    // Table of contents change handler
+    tocSelect.addEventListener('change', function() {
+      const p = parseInt(this.value, 10);
+      if (!isNaN(p)) {
+        pageNum = p;
+        renderPage(pageNum);
+      }
     });
     // Keyboard navigation
     document.addEventListener('keydown', function(e) {
