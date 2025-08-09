@@ -3,14 +3,44 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>От каменного века до железного — Читать онлайн</title>
+  <title>Читать книгу — История климата</title>
   <style>
-    body { margin:0; font-family: Arial, sans-serif; background:#f4f5f7; color:#222; }
-    .toolbar { position: sticky; top:0; z-index:5; display:flex; gap:8px; align-items:center; padding:10px; background:#fff; border-bottom:1px solid #e5e7eb; }
-    .toolbar button, .toolbar input { font-size:14px; padding:6px 10px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; }
-    .toolbar button:hover { background:#f1f5f9; cursor:pointer; }
-    .frame-wrap { height: calc(100vh - 54px); }
-    iframe { width:100%; height:100%; border:0; background:#fff; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f4f5f7; color: #222; }
+    /* Toolbar styling */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 10px;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .toolbar button,
+    .toolbar input {
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+    }
+    .toolbar button:hover {
+      background: #f1f5f9;
+      cursor: pointer;
+    }
+    /* Container for PDF canvas */
+    .canvas-wrap {
+      height: calc(100vh - 54px);
+      overflow: auto;
+      text-align: center;
+    }
+    canvas {
+      background: #fff;
+      margin: 0 auto;
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -18,48 +48,122 @@
     <button id="prev">← Предыдущая</button>
     <button id="next">Следующая →</button>
     <span>Стр. <input id="page" type="number" min="1" value="1" style="width:70px" /></span>
+    <span id="total-pages"></span>
     <span style="flex:1"></span>
-    <button id="w">По ширине</button>
-    <button id="f">Страница</button>
+    <button id="fitWidth">По ширине</button>
+    <button id="fitHeight">Страница</button>
   </div>
 
-  <div class="frame-wrap">
-    <iframe id="viewer" title="PDF"></iframe>
+  <div class="canvas-wrap">
+    <canvas id="pdf-canvas"></canvas>
   </div>
 
+  <!-- Load PDF.js library (includes both viewer and worker scripts) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js"></script>
   <script>
-    // absolute URL to your PDF
-    const fileURL = encodeURIComponent("https://genekaliman.github.io/kaliman-books/books/HistoryClimate/History_Climate.pdf");
-    // use unpkg viewer (works): 
-    const baseViewer = "https://unpkg.com/pdfjs-dist@4.4.168/web/viewer.html";
+    // Set the worker source for PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
-    let page = 1, zoom = "page-width";
-    const frame = document.getElementById("viewer");
-    const inp = document.getElementById("page");
+    // Relative URL to your PDF (same directory as this HTML file)
+    const url = 'History_Climate.pdf';
 
-    function srcFor(p,z){
-      return `${baseViewer}?file=${fileURL}#page=${p}&zoom=${z}&_=${Date.now()}`;
+    let pdfDoc = null;
+    let pageNum = 1;
+    let totalPages = 0;
+    let scale = 1.0;
+    let originalPageWidth = null;
+    let originalPageHeight = null;
+
+    const canvas = document.getElementById('pdf-canvas');
+    const ctx = canvas.getContext('2d');
+    const pageInput = document.getElementById('page');
+    const totalPagesSpan = document.getElementById('total-pages');
+
+    // Function to render a given page number
+    function renderPage(num) {
+      pdfDoc.getPage(num).then(function(page) {
+        // If we haven't stored the original page dimensions yet, do it now
+        if (!originalPageWidth || !originalPageHeight) {
+          const viewport1 = page.getViewport({ scale: 1.0 });
+          originalPageWidth = viewport1.width;
+          originalPageHeight = viewport1.height;
+        }
+        // Calculate the viewport based on current scale
+        const viewport = page.getViewport({ scale: scale });
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        const renderContext = {
+          canvasContext: ctx,
+          viewport: viewport
+        };
+        page.render(renderContext);
+      });
+      // Update the page number input
+      pageInput.value = num;
     }
-    function update(){
-      frame.src = srcFor(page, zoom);
-      history.replaceState(null, "", `#p=${page}`);
-      inp.value = page;
-    }
-    const hp = parseInt(location.hash.replace("#p=",""),10);
-    if(!isNaN(hp) && hp>0) page = hp;
-    update();
 
-    document.getElementById("prev").onclick = ()=>{ page=Math.max(1,page-1); update(); };
-    document.getElementById("next").onclick = ()=>{ page=page+1; update(); };
-    inp.onchange = ()=>{ const n=parseInt(inp.value,10); if(!isNaN(n)&&n>0){page=n; update();} else inp.value=page; };
-    document.getElementById("w").onclick = ()=>{ zoom="page-width"; update(); };
-    document.getElementById("f").onclick = ()=>{ zoom="page-fit";   update(); };
+    // Load the PDF document
+    pdfjsLib.getDocument(url).promise.then(function(pdf) {
+      pdfDoc = pdf;
+      totalPages = pdf.numPages;
+      document.getElementById('page').max = totalPages;
+      totalPagesSpan.textContent = `/ ${totalPages}`;
+      // Initially render the first page
+      renderPage(pageNum);
+    });
 
-    document.addEventListener("keydown", e=>{
-      if(e.key==="ArrowLeft"||e.key==="PageUp")   { page=Math.max(1,page-1); update(); }
-      if(e.key==="ArrowRight"||e.key==="PageDown"){ page=page+1; update(); }
+    // Button event handlers
+    document.getElementById('prev').addEventListener('click', function() {
+      if (pageNum <= 1) return;
+      pageNum--;
+      renderPage(pageNum);
+    });
+    document.getElementById('next').addEventListener('click', function() {
+      if (pageNum >= totalPages) return;
+      pageNum++;
+      renderPage(pageNum);
+    });
+    // Page number input change
+    pageInput.addEventListener('change', function() {
+      const desiredPage = parseInt(pageInput.value, 10);
+      if (!isNaN(desiredPage) && desiredPage >= 1 && desiredPage <= totalPages) {
+        pageNum = desiredPage;
+        renderPage(pageNum);
+      } else {
+        pageInput.value = pageNum;
+      }
+    });
+    // Fit to width
+    document.getElementById('fitWidth').addEventListener('click', function() {
+      if (!originalPageWidth) return;
+      const containerWidth = canvas.parentElement.clientWidth;
+      scale = containerWidth / originalPageWidth;
+      renderPage(pageNum);
+    });
+    // Fit to full height (page fit)
+    document.getElementById('fitHeight').addEventListener('click', function() {
+      if (!originalPageHeight) return;
+      const containerHeight = canvas.parentElement.clientHeight;
+      scale = containerHeight / originalPageHeight;
+      renderPage(pageNum);
+    });
+    // Keyboard navigation
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        if (pageNum > 1) {
+          pageNum--;
+          renderPage(pageNum);
+        }
+      }
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        if (pageNum < totalPages) {
+          pageNum++;
+          renderPage(pageNum);
+        }
+      }
     });
   </script>
 </body>
 </html>
-
