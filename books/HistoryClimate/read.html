@@ -6,6 +6,21 @@
   <title>Читать книгу — История климата</title>
   <style>
     body { margin: 0; font-family: Arial, sans-serif; background: #f4f5f7; color:#222; }
+
+    /* Loading overlay */
+    #loadingOverlay {
+      position: fixed; inset: 0;
+      background: rgba(255,255,255,0.9);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 9999; font-size: 18px; color: #333;
+    }
+    .spinner {
+      border: 6px solid #f3f3f3; border-top: 6px solid #3b82f6;
+      border-radius: 50%; width: 48px; height: 48px;
+      animation: spin 1s linear infinite; margin-bottom: 10px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
     .toolbar {
       position: sticky; top: 0; z-index: 5;
       display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
@@ -16,36 +31,54 @@
       border: 1px solid #cbd5e1; background: #fff;
     }
     .toolbar button:hover { background: #f1f5f9; cursor: pointer; }
+
+    /* Make ALL nav arrows consistent & prominent */
+    .nav-group button {
+      font-size: 26px;
+      font-weight: 700;
+      padding: 10px 16px;
+      border-width: 2px;
+      background-color: #f8fafc;
+      color: #111;
+    }
+    .nav-group button:hover { background-color: #e2e8f0; }
+
     .zoom-pack { display: inline-flex; gap: 6px; align-items: center; }
     #zoomSlider { width: 140px; }
     #zoomLabel { min-width: 48px; text-align: right; }
+
     .canvas-wrap { height: calc(100vh - 54px); overflow: auto; text-align: center; }
     canvas { background: #fff; margin: 0 auto; display: block; }
+
     @media (max-width: 600px) {
       .toolbar button, .toolbar input, .toolbar select { flex: 1 1 auto; margin-top: 4px; }
       .toolbar span { flex: 1 1 100%; }
       #zoomSlider { width: 100%; }
+      .nav-group button { font-size: 30px; padding: 14px 18px; }
     }
   </style>
 </head>
 <body>
+  <!-- Loading overlay -->
+  <div id="loadingOverlay">
+    <div class="spinner"></div>
+    <p>Загрузка книги…</p>
+  </div>
+
   <div class="toolbar">
-    <button id="first" title="В начало">⏮</button>
-    <button id="prev"  title="Предыдущая">←</button>
-    <button id="next"  title="Следующая">→</button>
-    <button id="last"  title="В конец">⏭</button>
+    <span class="nav-group">
+      <button id="first" title="В начало">⏮</button>
+      <button id="prev"  title="Предыдущая">◀</button>
+      <button id="next"  title="Следующая">▶</button>
+      <button id="last"  title="В конец">⏭</button>
+    </span>
 
     <span>Стр. <input id="page" type="number" min="1" value="1" style="width:70px" /></span>
     <span id="total-pages"></span>
 
     <span style="flex:1"></span>
 
-    <select id="toc" title="Содержание">
-      <option value="" disabled selected>Содержание…</option>
-    </select>
-
     <button id="fitPage" title="Подогнать по ширине">Во всю страницу</button>
-    <button id="fitOriginal" title="Подогнать по высоте">100%</button>
 
     <span class="zoom-pack" title="Интерактивное масштабирование">
       <button id="zoomOut" title="Уменьшить">−</button>
@@ -53,6 +86,11 @@
       <button id="zoomIn" title="Увеличить">+</button>
       <span id="zoomLabel">100%</span>
     </span>
+
+    <!-- TOC before Home -->
+    <select id="toc" title="Содержание">
+      <option value="" disabled selected>Содержание…</option>
+    </select>
 
     <button id="home" title="На главную" style="margin-left:auto">На главную</button>
   </div>
@@ -71,10 +109,10 @@
     // Config / state
     const url = 'History_Climate.pdf';
     let pdfDoc = null, pageNum = 1, totalPages = 0;
-    let scale = 1.0;                         // logical (CSS) scale
+    let scale = 1.0; // logical (CSS) scale
     let originalPageWidth = null, originalPageHeight = null;
     let initialZoomApplied = false;
-    let zoomMode = localStorage.getItem('zoomMode') || '100%'; // default to full height
+    let zoomMode = localStorage.getItem('zoomMode') || '100%'; // default to vertical fit on first open
     const Z_MIN = 0.5, Z_MAX = 3.0, Z_STEP = 0.1;
 
     // Elements
@@ -89,7 +127,6 @@
     // Render with devicePixelRatio for crisp text on mobile/retina
     function renderPage(num) {
       pdfDoc.getPage(num).then(function(page) {
-        // discover native PDF page size once
         if (!originalPageWidth || !originalPageHeight) {
           const v1 = page.getViewport({ scale: 1.0 });
           originalPageWidth = v1.width;
@@ -102,10 +139,9 @@
           }
         }
 
-        // viewport in logical (CSS) pixels
         const viewport = page.getViewport({ scale });
 
-        // render at device pixel ratio
+        // DPR-aware rendering
         const dpr = window.devicePixelRatio || 1;
         const outW = Math.floor(viewport.width  * dpr);
         const outH = Math.floor(viewport.height * dpr);
@@ -121,7 +157,12 @@
           viewport,
           transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null
         };
-        page.render(renderContext);
+
+        page.render(renderContext).promise.then(function() {
+          // hide loading overlay after first page draws
+          const overlay = document.getElementById('loadingOverlay');
+          if (num === 1 && overlay) overlay.style.display = 'none';
+        });
       });
 
       pageInput.value = num;
@@ -130,149 +171,12 @@
     function applyStoredZoomOnce() {
       if (zoomMode.startsWith('custom:')) {
         const s = parseFloat(zoomMode.split(':')[1]);
-        if (!isNaN(s)) {
-          setScale(s, /*persist*/false);
-          return renderPage(pageNum);
-        }
+        if (!isNaN(s)) { setScale(s, /*persist*/false); return renderPage(pageNum); }
         zoomMode = '100%';
       }
-      applyZoomMode(zoomMode); // 'page' (fit width) or '100%' (fit height)
+      applyZoomMode(zoomMode); // 'page' (fit width) or '100%' (fit height default)
     }
 
     // Preset zooms:
     // 'page'  -> fit WIDTH (Во всю страницу)
-    // '100%'  -> fit HEIGHT (full page vertical)
-    function applyZoomMode(mode) {
-      if (!originalPageWidth || !originalPageHeight) return;
-      const container = canvas.parentElement;
-
-      if (mode === 'page') {
-        scale = container.clientWidth / originalPageWidth; // fit width
-      } else if (mode === '100%') {
-        scale = container.clientHeight / originalPageHeight; // fit height
-      } else if (mode.startsWith('custom:')) {
-        const s = parseFloat(mode.split(':')[1]);
-        if (!isNaN(s)) scale = s;
-      }
-
-      zoomMode = mode;
-      localStorage.setItem('zoomMode', mode);
-      syncZoomUI();
-      renderPage(pageNum);
-    }
-
-    // Interactive zoom (buttons/slider/wheel)
-    function setScale(newScale, persist = true) {
-      scale = Math.max(Z_MIN, Math.min(Z_MAX, newScale));
-      zoomMode = 'custom:' + scale.toFixed(2);
-      if (persist) localStorage.setItem('zoomMode', zoomMode);
-      syncZoomUI();
-      renderPage(pageNum);
-    }
-
-    function syncZoomUI() {
-      const percent = Math.round(scale * 100);
-      zoomSlider.value = Math.max(zoomSlider.min, Math.min(zoomSlider.max, percent));
-      zoomLabel.textContent = percent + '%';
-    }
-
-    // Load PDF
-    pdfjsLib.getDocument(url).promise.then(function(pdf) {
-      pdfDoc = pdf;
-      totalPages = pdf.numPages;
-      pageInput.max = totalPages;
-      totalPagesSpan.textContent = `/ ${totalPages}`;
-      renderPage(pageNum);
-
-      // TOC entries (adjust as needed)
- 	const tocEntries = [
-        { title: 'Введение', page: 3 },
-        { title: 'Глава 1. Климат и история', page: 5 },
-        { title: 'Глава 2. Эти таинственные шумеры', page: 37 },
-        { title: 'Глава 3. Убейдцы и шумеры', page: 71 },
-        { title: 'Глава 4. Конец периода Джемдет-Наср.', page: 110 },
-        { title: 'Глава 5. Войны номов', page: 132 },
-        { title: 'Глава 6. Расцвет и гибель Аккадского царства', page: 150 },
-        { title: 'Глава 7. Возвышение Ура и появление амореев', page: 166 },
-        { title: 'Глава 8. Ближний Восток в ХVI-ХIV веках до н. э.', page: 193 },
-        { title: 'Глава 9. Коллапс бронзового века', page: 218 },
-        { title: 'Глава 10. Современные изменения климата', page: 254 }
-      ];
-      for (const entry of tocEntries) {
-        const opt = document.createElement('option');
-        opt.value = entry.page;
-        opt.textContent = entry.title;
-        tocSelect.appendChild(opt);
-      }
-    });
-
-    // Nav handlers
-    document.getElementById('first').addEventListener('click', () => { pageNum = 1; renderPage(pageNum); });
-    document.getElementById('prev').addEventListener('click',  () => { if (pageNum > 1) { pageNum--; renderPage(pageNum); } });
-    document.getElementById('next').addEventListener('click',  () => { if (pageNum < totalPages) { pageNum++; renderPage(pageNum); } });
-    document.getElementById('last').addEventListener('click',  () => { pageNum = totalPages; renderPage(pageNum); });
-
-    // Page direct jump
-    pageInput.addEventListener('change', () => {
-      const p = parseInt(pageInput.value, 10);
-      if (!isNaN(p) && p >= 1 && p <= totalPages) { pageNum = p; renderPage(pageNum); }
-      else { pageInput.value = pageNum; }
-    });
-
-    // Preset zooms
-    document.getElementById('fitPage').addEventListener('click', () => applyZoomMode('page'));     // fit width
-    document.getElementById('fitOriginal').addEventListener('click', () => applyZoomMode('100%')); // fit height
-
-    // Home
-    document.getElementById('home').addEventListener('click', () => { window.location.href = '../../index.html'; });
-
-    // TOC jump
-    tocSelect.addEventListener('change', function() {
-      const p = parseInt(this.value, 10);
-      if (!isNaN(p)) { pageNum = p; renderPage(pageNum); }
-    });
-
-    // Keyboard nav
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'ArrowLeft' || e.key === 'PageUp')   { if (pageNum > 1)        { pageNum--; renderPage(pageNum); } }
-      if (e.key === 'ArrowRight' || e.key === 'PageDown'){ if (pageNum < totalPages){ pageNum++; renderPage(pageNum); } }
-    });
-
-    // Interactive zoom controls
-    document.getElementById('zoomIn').addEventListener('click',  () => setScale(scale + Z_STEP));
-    document.getElementById('zoomOut').addEventListener('click', () => setScale(scale - Z_STEP));
-    zoomSlider.addEventListener('input', (e) => setScale(parseInt(e.target.value, 10) / 100));
-
-    // Ctrl/Cmd + wheel zoom (like desktop PDF viewers)
-    canvas.parentElement.addEventListener('wheel', (e) => {
-      if (!(e.ctrlKey || e.metaKey)) return; // require Ctrl/Cmd to zoom
-      e.preventDefault();
-      const delta = e.deltaY < 0 ? Z_STEP : -Z_STEP;
-      setScale(scale + delta);
-    }, { passive: false });
-
-    // Re-apply zoom on resize/orientation change
-    window.addEventListener('resize', () => {
-      if (zoomMode.startsWith('custom:')) {
-        renderPage(pageNum);
-      } else {
-        applyZoomMode(zoomMode); // 'page' or '100%'
-      }
-    });
-
-    // Initialize zoom UI to match stored value (before first render completes)
-    (function initZoomUIFromStorage() {
-      if (zoomMode.startsWith('custom:')) {
-        const s = parseFloat(zoomMode.split(':')[1]);
-        const pct = Math.round((isNaN(s) ? 1.0 : s) * 100);
-        zoomSlider.value = pct;
-        zoomLabel.textContent = pct + '%';
-      } else {
-        // default label; will update after first render
-        zoomSlider.value = 100;
-        zoomLabel.textContent = '100%';
-      }
-    })();
-  </script>
-</body>
-</html>
+    // '100%'  -> fit HEI
