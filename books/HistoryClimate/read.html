@@ -275,7 +275,7 @@
     // Page direct jump  --my change --
     pageInput.addEventListener('change', () => {
       const p = parseInt(pageInput.value, 10);
-      if (!isNaN(p) && p >= 1 && p <= totalPages) { pageNum = p; renderPage(pageNum); }
+      if (!isNaN(p) && p >= 1 && p <= totalPages) { pageNum = p-1; renderPage(pageNum); }
       else { pageInput.value = pageNum; }
     });
 
