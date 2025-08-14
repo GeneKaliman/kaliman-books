@@ -323,10 +323,10 @@
     // Home
     document.getElementById('home').addEventListener('click', () => { window.location.href = '../../index.html'; });
 
-    // TOC jump 
+    // TOC jump   -- my changes
     tocSelect.addEventListener('change', function() {
       const p = parseInt(this.value, 10);
-      if (!isNaN(p)) { pageNum = p; renderPage(pageNum); }
+      if (!isNaN(p)) { pageNum = p + 1; renderPage(pageNum); }
     });
 
     // Keyboard nav  
