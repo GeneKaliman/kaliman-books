@@ -106,9 +106,9 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
-    // Config / state  --my change
+    // Config / state  
     const url = 'History_Climate.pdf';
-    let pdfDoc = null, pageNum = 2, totalPages = 0;
+    let pdfDoc = null, pageNum = 1, totalPages = 0;
     let scale = 1.0; // logical (CSS) scale
     let originalPageWidth = null, originalPageHeight = null;
     let initialZoomApplied = false;
@@ -241,7 +241,7 @@
       totalPagesSpan.textContent = `/ ${totalPages}`;
       renderPage(pageNum);
 
-      // TOC entries (your original pages)  -- my change
+      // TOC entries (your original pages)  
       const tocEntries = [
         { title: 'Введение', page: 3 },
         { title: 'Глава 1. Климат и история', page: 5 },
@@ -266,16 +266,16 @@
       hideOverlayOnce();
     });
 
-    // Nav handlers  -- my change
-    document.getElementById('first').addEventListener('click', () => { pageNum = 2; renderPage(pageNum); });
-    document.getElementById('prev').addEventListener('click',  () => { if (pageNum > 2) { pageNum--; renderPage(pageNum); } });
+    // Nav handlers  
+    document.getElementById('first').addEventListener('click', () => { pageNum = 1; renderPage(pageNum); });
+    document.getElementById('prev').addEventListener('click',  () => { if (pageNum > 1) { pageNum--; renderPage(pageNum); } });
     document.getElementById('next').addEventListener('click',  () => { if (pageNum < totalPages) { pageNum++; renderPage(pageNum); } });
     document.getElementById('last').addEventListener('click',  () => { pageNum = totalPages; renderPage(pageNum); });
 
-    // Page direct jump  --my change
+    // Page direct jump  --my change --
     pageInput.addEventListener('change', () => {
       const p = parseInt(pageInput.value, 10);
-      if (!isNaN(p) && p >= 2 && p <= totalPages) { pageNum = p-1; renderPage(pageNum); }
+      if (!isNaN(p) && p >= 1 && p <= totalPages) { pageNum = p; renderPage(pageNum); }
       else { pageInput.value = pageNum; }
     });
 
@@ -323,15 +323,15 @@
     // Home
     document.getElementById('home').addEventListener('click', () => { window.location.href = '../../index.html'; });
 
-    // TOC jump -- my change
+    // TOC jump 
     tocSelect.addEventListener('change', function() {
       const p = parseInt(this.value, 10);
-      if (!isNaN(p)) { pageNum = p-1; renderPage(pageNum); }
+      if (!isNaN(p)) { pageNum = p; renderPage(pageNum); }
     });
 
-    // Keyboard nav  -- my change
+    // Keyboard nav  
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'ArrowLeft' || e.key === 'PageUp')   { if (pageNum > 2)         { pageNum--; renderPage(pageNum); } }
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp')   { if (pageNum > 1)         { pageNum--; renderPage(pageNum); } }
       if (e.key === 'ArrowRight' || e.key === 'PageDown'){ if (pageNum < totalPages){ pageNum++; renderPage(pageNum); } }
     });
 
