@@ -113,9 +113,9 @@
     // Elements
     const canvas = document.getElementById('pdf-canvas');
     const ctx = canvas.getContext('2d');
-    // pageInput removed
-    // totalPagesSpan removed
-const tocSelect = document.getElementById('toc');
+    const pageInput = { set value(_) {}, set max(_) {}, addEventListener() {} };
+    const totalPagesSpan = { set textContent(_) {} };
+    const tocSelect = document.getElementById('toc');
     const zoomSlider = document.getElementById('zoomSlider');
     const zoomLabel = document.getElementById('zoomLabel');
 
@@ -177,8 +177,9 @@ const tocSelect = document.getElementById('toc');
         console.error('PDF getPage error:', err);
         hideOverlayOnce();
       });
-    // pageInput update removed
-}
+
+      pageInput.value = num;
+    }
 
     function applyStoredZoomOnce() {
       if (!zoomMode) zoomMode = '100%';
@@ -231,9 +232,9 @@ const tocSelect = document.getElementById('toc');
     pdfjsLib.getDocument(url).promise.then(function(pdf) {
       pdfDoc = pdf;
       totalPages = pdf.numPages;
-    // pageInput max removed
-    // total pages text removed
-renderPage(pageNum);
+      pageInput.max = totalPages;
+      totalPagesSpan.textContent = `/ ${totalPages}`;
+      renderPage(pageNum);
 
       // TOC entries (your original pages)  
       const tocEntries = [
@@ -267,10 +268,10 @@ renderPage(pageNum);
     document.getElementById('last').addEventListener('click',  () => { pageNum = totalPages; renderPage(pageNum); });
 
     // Page direct jump  --my change no change--
-    // pageInput removed: addEventListener('change', () => {
-      const p = parseInt(// pageInput removed: value, 10);
+    pageInput.addEventListener('change', () => {
+      const p = parseInt(pageInput.value, 10);
       if (!isNaN(p) && p >= 1 && p <= totalPages) { pageNum = p; renderPage(pageNum ); }
-      else { // pageInput removed: value = pageNum; }
+      else { pageInput.value = pageNum; }
     });
 
     // Preset zooms
