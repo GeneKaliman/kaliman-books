@@ -71,12 +71,7 @@
       <button id="prev"  title="Предыдущая">◀</button>
       <button id="next"  title="Следующая">▶</button>
       <button id="last"  title="В конец">⏭</button>
-    </span>
-
-    <span>Стр. <input id="page" type="number" min="1" value="1" style="width:70px" /></span>
-    <span id="total-pages"></span>
-
-    <span style="flex:1"></span>
+    </span><span style="flex:1"></span>
 
     <button id="fitPage" title="Подогнать по ширине">Во всю страницу</button>
 
@@ -118,9 +113,9 @@
     // Elements
     const canvas = document.getElementById('pdf-canvas');
     const ctx = canvas.getContext('2d');
-    const pageInput = document.getElementById('page');
-    const totalPagesSpan = document.getElementById('total-pages');
-    const tocSelect = document.getElementById('toc');
+    const currentPageSpan = document.getElementById(\'current-page\');
+    // totalPagesSpan removed (UI hidden)
+const tocSelect = document.getElementById('toc');
     const zoomSlider = document.getElementById('zoomSlider');
     const zoomLabel = document.getElementById('zoomLabel');
 
@@ -183,7 +178,7 @@
         hideOverlayOnce();
       });
 
-      pageInput.value = num;
+      if (currentPageSpan) currentPageSpan.textContent = num;
     }
 
     function applyStoredZoomOnce() {
@@ -237,9 +232,9 @@
     pdfjsLib.getDocument(url).promise.then(function(pdf) {
       pdfDoc = pdf;
       totalPages = pdf.numPages;
-      pageInput.max = totalPages;
-      totalPagesSpan.textContent = `/ ${totalPages}`;
-      renderPage(pageNum);
+      currentPageSpan /*removed input*/.max = totalPages;
+    // totalPages text update removed
+renderPage(pageNum);
 
       // TOC entries (your original pages)  
       const tocEntries = [
@@ -273,13 +268,8 @@
     document.getElementById('last').addEventListener('click',  () => { pageNum = totalPages; renderPage(pageNum); });
 
     // Page direct jump  --my change no change--
-    pageInput.addEventListener('change', () => {
-      const p = parseInt(pageInput.value, 10);
-      if (!isNaN(p) && p >= 1 && p <= totalPages) { pageNum = p; renderPage(pageNum ); }
-      else { pageInput.value = pageNum; }
-    });
-
-    // Preset zooms
+    // Direct page-number jump removed
+// Preset zooms
     document.getElementById('fitPage').addEventListener('click', () => applyZoomMode('page')); // fit width
 
     // Interactive zoom controls
