@@ -25,8 +25,10 @@
     .btn { appearance: none; border: 0; border-radius: 12px; padding: 8px 12px; background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px; }
     .btn:active { background: rgba(255,255,255,0.1); }
     .icon { font-size: 20px; line-height: 1; }
-    .stage { position: fixed; inset: 0; overflow: hidden; touch-action: none; background: var(--bg); }
-    .pageWrap { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); will-change: transform; }
+    /* Stage centers content with CSS grid */
+    .stage { position: fixed; inset: 0; overflow: hidden; touch-action: none; background: var(--bg); display: grid; place-items: center; }
+    .center { position: relative; }
+    .pageWrap { position: relative; will-change: transform; }
     canvas { display: block; background: #fff; max-width: 100%; height: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
     .tapzone { position: fixed; top: 0; bottom: 0; width: 22%; z-index: 5; }
     .tap-left{ left:0;} .tap-right{ right:0;} .tap-mid{ left:22%; right:22%; width:auto; }
@@ -62,7 +64,9 @@
   </div>
 
   <div class="stage" id="stage">
-    <div class="pageWrap" id="pageWrap"><canvas id="page"></canvas></div>
+    <div class="center">
+      <div class="pageWrap" id="pageWrap"><canvas id="page"></canvas></div>
+    </div>
   </div>
 
   <div class="tapzone tap-left"  id="zonePrev"></div>
@@ -116,7 +120,13 @@
 
     function showError(msg){ const b=document.getElementById('errorBox'); b.textContent=msg; b.classList.add('show'); setTimeout(()=>b.classList.remove('show'),8000); console.error(msg); }
 
-    // HARD-CODED PDF NAME
+    const params = new URLSearchParams(location.search);
+    if (params.get('reset') === '1') {
+      localStorage.removeItem('mPage');
+      localStorage.removeItem('mUserScale');
+    }
+
+    // Hard-coded PDF
     const PDF_URL = 'History_Climate.pdf';
 
     const canvas = document.getElementById('page'), ctx = canvas.getContext('2d');
@@ -130,8 +140,8 @@
     const gotoInput = document.getElementById('gotoInput'), gotoBtn = document.getElementById('gotoBtn'), tocBtn = document.getElementById('tocBtn'), closeModal = document.getElementById('closeModal');
     const zoomInBtn = document.getElementById('zoomIn'), zoomOutBtn = document.getElementById('zoomOut'), zoomSlider = document.getElementById('zoomSlider'), fitBtn = document.getElementById('fitBtn');
 
-    let pdfDoc=null, pageNum=1, totalPages=0, originalPageWidth=null, showChrome=false;
-    let baseScale=1, userScale=Math.max(0.7, Math.min(3.0, parseInt(localStorage.getItem('mUserScale')||'100',10)/100));
+    let pdfDoc=null, pageNum=1, totalPages=0, originalPageWidth=null;
+    let userScale=Math.max(0.7, Math.min(3.0, parseInt(localStorage.getItem('mUserScale')||'100',10)/100));
     let panX=0, panY=0;
 
     const tocEntries=[
@@ -144,9 +154,9 @@
 
     function savePos(){ localStorage.setItem('mPage', String(pageNum)); localStorage.setItem('mUserScale', String(Math.round(userScale*100))); }
     function setBodyState(k,on){ document.body.classList.toggle(k,on); }
-    function toggleChrome(show){ if(typeof show==='boolean') showChrome=show; else showChrome=!showChrome; setBodyState('chrome-visible', showChrome); }
-    function openMenu(){ modalPageMeta.textContent=`Стр. ${pageNum} / ${totalPages}`; modalBackdrop.classList.add('open'); setBodyState('modal-open', true); zoomSlider.value=String(Math.round(userScale*100)); }
-    function closeMenu(){ modalBackdrop.classList.remove('open'); setBodyState('modal-open', false); }
+    function toggleChrome(show){ document.body.classList.toggle('chrome-visible', !!show); }
+    function openMenu(){ modalPageMeta.textContent=`Стр. ${pageNum} / ${totalPages}`; modalBackdrop.classList.add('open'); document.body.classList.add('modal-open','chrome-visible'); zoomSlider.value=String(Math.round(userScale*100)); }
+    function closeMenu(){ modalBackdrop.classList.remove('open'); document.body.classList.remove('modal-open'); }
     function updateMeta(){ pageMeta.textContent=`Стр. ${pageNum} / ${totalPages}`; modalPageMeta.textContent=`Стр. ${pageNum} / ${totalPages}`; }
 
     pdfjsLib.getDocument(PDF_URL).promise.then(pdf=>{
@@ -156,60 +166,86 @@
       buildTOC(); render(true);
     }).catch(err=>showError('Ошибка загрузки PDF: '+err.message));
 
-    function computeBaseScale(page){ const targetW=Math.min(window.innerWidth, document.documentElement.clientWidth); const vp1=page.getViewport({scale:1}); originalPageWidth=vp1.width; return targetW/originalPageWidth; }
-    function applyPanClamp(){ const cw=parseFloat(canvas.style.width)||canvas.width, ch=parseFloat(canvas.style.height)||canvas.height; const sr=stage.getBoundingClientRect(); const overX=Math.max(0,(cw - sr.width)/2), overY=Math.max(0,(ch - sr.height)/2); panX=Math.max(-overX-60, Math.min(overX+60, panX)); panY=Math.max(-overY-60, Math.min(overY+60, panY)); }
-    function applyTransform(){ pageWrap.style.transform=`translate(calc(50% + ${panX}px), calc(50% + ${panY}px)) translate(-50%,-50%)`; }
-
-    let rerenderScheduled=null;
-    function scheduleHiDpiRerender(){ if(rerenderScheduled) cancelAnimationFrame(rerenderScheduled); rerenderScheduled=requestAnimationFrame(()=>render(false)); }
+    function fitScaleToWidth(page) {
+      const targetW = Math.min(window.innerWidth, document.documentElement.clientWidth);
+      const vp1 = page.getViewport({ scale: 1 });
+      originalPageWidth = vp1.width;
+      return targetW / originalPageWidth;
+    }
 
     function render(resetPan=false){
       if(!pdfDoc) return;
       pdfDoc.getPage(pageNum).then(page=>{
-        baseScale=computeBaseScale(page);
-        const dpr=window.devicePixelRatio||1, s=baseScale*userScale, vp=page.getViewport({scale:s});
-        canvas.width=Math.floor(vp.width*dpr); canvas.height=Math.floor(vp.height*dpr);
-        canvas.style.width=Math.floor(vp.width)+'px'; canvas.style.height=Math.floor(vp.height)+'px';
+        const base = fitScaleToWidth(page);
+        const dpr = window.devicePixelRatio || 1;
+        const s = base * userScale;
+        const vp = page.getViewport({ scale: s });
+        canvas.width = Math.floor(vp.width * dpr);
+        canvas.height = Math.floor(vp.height * dpr);
+        canvas.style.width = Math.floor(vp.width) + 'px';
+        canvas.style.height = Math.floor(vp.height) + 'px';
         page.render({canvasContext:ctx, viewport:vp, transform:dpr!==1?[dpr,0,0,dpr,0,0]:null}).promise.then(()=>{
-          updateMeta(); if(resetPan){ panX=0; panY=0; } applyPanClamp(); applyTransform();
+          updateMeta();
+          if (resetPan) { panX = 0; panY = 0; }
+          clampPan(); applyPan();
         });
       }).catch(err=>showError('Ошибка рендеринга: '+err.message));
     }
 
-    // Paging by taps; center opens menu
+    function viewportSize(){ const sr=stage.getBoundingClientRect(); return {w:sr.width, h:sr.height}; }
+    function canvasSize(){ return {w: parseFloat(canvas.style.width)||canvas.width, h: parseFloat(canvas.style.height)||canvas.height}; }
+
+    function clampPan(){
+      const v = viewportSize(), c = canvasSize();
+      const overX = Math.max(0, (c.w - v.w)/2), overY = Math.max(0, (c.h - v.h)/2);
+      panX = Math.max(-overX-60, Math.min(overX+60, panX));
+      panY = Math.max(-overY-60, Math.min(overY+60, panY));
+    }
+    function applyPan(){ pageWrap.style.transform = `translate(${panX}px, ${panY}px)`; }
+
+    // Paging via taps
     zonePrev.addEventListener('click', ()=>{ if(pageNum>1){ pageNum--; savePos(); render(true);} });
     zoneNext.addEventListener('click', ()=>{ if(pageNum<totalPages){ pageNum++; savePos(); render(true);} });
-    zoneToggle.addEventListener('click', ()=>{ openMenu(); toggleChrome(true); });
+    zoneToggle.addEventListener('click', ()=>{ openMenu(); });
 
-    // Touch: pinch-zoom + pan when zoomed; swipe to turn when not zoomed
-    let touchMode='idle', lastX=0, lastY=0, startX=0, startY=0, startDist=0, startScale=1;
+    // Gestures
+    let mode='idle', startX=0, startY=0, lastX=0, lastY=0, startDist=0, startScale=1;
     function dist(t0,t1){ const dx=t1.clientX-t0.clientX, dy=t1.clientY-t0.clientY; return Math.hypot(dx,dy); }
 
     stage.addEventListener('touchstart', e=>{
-      if(e.touches.length===2){ touchMode='pinch'; startDist=dist(e.touches[0],e.touches[1]); startScale=userScale; }
-      else if(e.touches.length===1){ startX=lastX=e.touches[0].clientX; startY=lastY=e.touches[0].clientY; touchMode=(userScale>1.02)?'pan':'swipe'; }
+      if(e.touches.length===2){ mode='pinch'; startDist=dist(e.touches[0],e.touches[1]); startScale=userScale; }
+      else if(e.touches.length===1){ startX=lastX=e.touches[0].clientX; startY=lastY=e.touches[0].clientY; mode=(userScale>1.02)?'pan':'swipe'; }
     }, {passive:false});
 
     stage.addEventListener('touchmove', e=>{
-      if(touchMode==='pinch'&&e.touches.length===2){ e.preventDefault(); const d=dist(e.touches[0],e.touches[1]), factor=d/(startDist||d);
-        userScale=Math.max(0.7, Math.min(3.0, startScale*factor)); zoomSlider.value=String(Math.round(userScale*100)); applyPanClamp(); applyTransform(); scheduleHiDpiRerender();
-      } else if(touchMode==='pan'&&e.touches.length===1){ e.preventDefault(); const x=e.touches[0].clientX,y=e.touches[0].clientY; const dx=x-lastX,dy=y-lastY; lastX=x; lastY=y; panX+=dx; panY+=dy; applyPanClamp(); applyTransform();
-      } else if(touchMode==='swipe'&&e.touches.length===1){ lastX=e.touches[0].clientX; lastY=e.touches[0].clientY; }
+      if(mode==='pinch'&&e.touches.length===2){
+        e.preventDefault();
+        const d=dist(e.touches[0],e.touches[1]); const factor=d/(startDist||d);
+        userScale=Math.max(0.7, Math.min(3.0, startScale*factor));
+        zoomSlider.value = String(Math.round(userScale*100));
+        render(false); // redraw at new scale
+      } else if(mode==='pan'&&e.touches.length===1){
+        e.preventDefault();
+        const x=e.touches[0].clientX, y=e.touches[0].clientY;
+        panX += (x-lastX); panY += (y-lastY); lastX=x; lastY=y; clampPan(); applyPan();
+      } else if(mode==='swipe'&&e.touches.length===1){
+        lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+      }
     }, {passive:false});
 
     stage.addEventListener('touchend', e=>{
-      if(touchMode==='swipe'){ const dx=lastX-startX, dy=lastY-startY; if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>40){ if(dx<0&&pageNum<totalPages){ pageNum++; savePos(); render(true);} if(dx>0&&pageNum>1){ pageNum--; savePos(); render(true);} } }
-      if(touchMode==='pinch') scheduleHiDpiRerender(); touchMode='idle';
+      if(mode==='swipe'){ const dx=lastX-startX, dy=lastY-startY; if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>40){ if(dx<0&&pageNum<totalPages){ pageNum++; savePos(); render(true);} if(dx>0&&pageNum>1){ pageNum--; savePos(); render(true);} } }
+      mode='idle';
     }, {passive:false});
 
     // Topbar & modal
     menuBtn.addEventListener('click', ()=> drawer.classList.toggle('open'));
-    aaBtn.addEventListener('click', ()=> toggleChrome());
+    aaBtn.addEventListener('click', ()=> document.body.classList.toggle('chrome-visible'));
     tocBtn.addEventListener('click', ()=> drawer.classList.add('open'));
-    closeModal.addEventListener('click', ()=>{ closeMenu(); toggleChrome(false); });
+    closeModal.addEventListener('click', ()=>{ closeMenu(); document.body.classList.remove('chrome-visible'); });
 
     // Go to page
-    gotoBtn.addEventListener('click', ()=>{ const p=parseInt(gotoInput.value||'0',10); if(!isNaN(p)&&p>=1&&p<=totalPages){ pageNum=p; savePos(); render(true); closeMenu(); toggleChrome(false);} });
+    gotoBtn.addEventListener('click', ()=>{ const p=parseInt(gotoInput.value||'0',10); if(!isNaN(p)&&p>=1&&p<=totalPages){ pageNum=p; savePos(); render(true); closeMenu(); document.body.classList.remove('chrome-visible'); } });
 
     // Search
     let searchResults=[], searchIndex=-1, textCache={};
@@ -221,18 +257,13 @@
     searchBtn.addEventListener('click', ()=>buildSearch(searchInput.value.trim())); searchNext.addEventListener('click', ()=>gotoSearch(+1)); searchPrev.addEventListener('click', ()=>gotoSearch(-1));
 
     // Bottom zoom
-    function setScaleFromSlider(v){ userScale=Math.max(0.7, Math.min(3.0, v/100)); localStorage.setItem('mUserScale', String(Math.round(userScale*100))); scheduleHiDpiRerender(); applyPanClamp(); applyTransform(); }
+    function setScaleFromSlider(v){ userScale=Math.max(0.7, Math.min(3.0, v/100)); localStorage.setItem('mUserScale', String(Math.round(userScale*100))); render(false); }
     zoomSlider.addEventListener('input', e=> setScaleFromSlider(parseInt(e.target.value,10)));
     zoomInBtn.addEventListener('click', ()=> setScaleFromSlider(Math.min(300, parseInt(zoomSlider.value,10)+10)));
     zoomOutBtn.addEventListener('click', ()=> setScaleFromSlider(Math.max(70, parseInt(zoomSlider.value,10)-10)));
     fitBtn.addEventListener('click', ()=>{ userScale=1; panX=0; panY=0; zoomSlider.value='100'; savePos(); render(true); });
 
     window.addEventListener('resize', ()=> render(false));
-
-    // Drawer swipe close
-    let drawerStartX=null;
-    drawer.addEventListener('touchstart', e=>{ if(e.touches.length===1) drawerStartX=e.touches[0].clientX; }, {passive:true});
-    drawer.addEventListener('touchend', e=>{ if(drawerStartX==null) return; const dx=e.changedTouches[0].clientX-drawerStartX; if(dx>70) drawer.classList.remove('open'); drawerStartX=null; }, {passive:true});
   </script>
 </body>
 </html>
