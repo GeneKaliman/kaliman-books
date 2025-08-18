@@ -158,6 +158,7 @@
     const canvas = document.getElementById('page');
     const scroller = document.getElementById('scroller');
 
+    function isLandscape(){ return (window.matchMedia && window.matchMedia('(orientation: landscape)').matches) || (window.innerWidth>window.innerHeight); }
     function setScrollMode(on) {
       document.body.classList.toggle('scrollY', !!on);
       if (!on) scroller.scrollTop = 0;
@@ -263,7 +264,7 @@
         const rc = { canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null };
         page.render(rc).promise.then(() => {
           updateMeta();
-          setScrollMode(shouldScroll());
+          setScrollMode(shouldScroll() || isLandscape());
         });
       });
     }
