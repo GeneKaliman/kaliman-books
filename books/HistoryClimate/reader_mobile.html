@@ -49,6 +49,7 @@
     .icon { font-size: 20px; line-height: 1; }
 
     /* Canvas wrap */
+    body.scrollY .stage { touch-action: pan-y; }
     .scroller { width: 100%; height: 100%; overflow-y: hidden; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
     body.scrollY .scroller { overflow-y: auto; }
     .stage {
