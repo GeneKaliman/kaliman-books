@@ -12,6 +12,7 @@
       --accent: #8ab4f8;
       --bar: rgba(0,0,0,0.7);
       --bar-blur: blur(6px);
+      --overlay: rgba(0,0,0,0.55);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; }
@@ -23,9 +24,9 @@
       overscroll-behavior: none;
     }
 
-    /* Chrome (top/bottom overlays) */
-    .topbar, .bottombar {
-      position: fixed; left: 0; right: 0; z-index: 10;
+    /* Top chrome */
+    .topbar {
+      position: fixed; left: 0; right: 0; top: 0; z-index: 10;
       display: flex; align-items: center; gap: 12px;
       padding: env(safe-area-inset-top) 12px 12px 12px;
       backdrop-filter: var(--bar-blur);
@@ -33,13 +34,8 @@
       transform: translateY(-100%);
       transition: transform .25s ease;
     }
-    .bottombar {
-      bottom: 0; top: auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)) 12px;
-      transform: translateY(100%);
-      justify-content: space-between;
-    }
-    body.chrome-visible .topbar { transform: translateY(0); }
-    body.chrome-visible .bottombar { transform: translateY(0); }
+    body.chrome-visible .topbar,
+    body.modal-open .topbar { transform: translateY(0); }
 
     .btn {
       appearance: none; border: 0; border-radius: 12px; padding: 8px 12px;
@@ -48,11 +44,17 @@
     .btn:active { background: rgba(255,255,255,0.1); }
     .icon { font-size: 20px; line-height: 1; }
 
-    /* Canvas wrap */
+    /* Stage (no scroll; page-fit by width). We pan inside when zoomed */
     .stage {
       position: fixed; inset: 0;
-      display: grid; place-items: center;
-      touch-action: manipulation; /* we'll manage pinch separately */
+      overflow: hidden;
+      touch-action: none; /* we'll manage pinch/pan */
+      background: var(--bg);
+    }
+    .pageWrap {
+      position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%,-50%);
+      will-change: transform;
     }
     canvas {
       display: block;
@@ -62,23 +64,13 @@
       box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
 
-    /* Tap zones */
+    /* Tap zones for paging */
     .tapzone {
-      position: fixed; top: 0; bottom: 0; width: 33.34%; z-index: 5;
+      position: fixed; top: 0; bottom: 0; width: 22%; z-index: 5;
     }
     .tap-left  { left: 0; }
-    .tap-mid   { left: 33.34%; }
     .tap-right { right: 0; }
-
-    /* Progress */
-    .progress {
-      position: absolute; left: 0; bottom: 0;
-      height: 3px; width: 100%; background: rgba(255,255,255,0.08);
-    }
-    .progress > span {
-      display: block; height: 100%; width: 0;
-      background: var(--accent); transition: width .2s ease;
-    }
+    .tap-mid   { left: 22%; right: 22%; width: auto; }
 
     /* Drawer (TOC) */
     .drawer {
@@ -89,9 +81,7 @@
     }
     .drawer.open { transform: translateX(0); }
     .drawer header { padding: 16px; border-bottom: 1px solid #202124; font-weight: 600; }
-    .drawer .toc {
-      flex: 1; overflow: auto; padding: 6px 8px 16px 8px;
-    }
+    .drawer .toc { flex: 1; overflow: auto; padding: 6px 8px 16px 8px; }
     .toc button {
       width: 100%; text-align: left; padding: 10px 12px; margin: 6px 4px;
       background: transparent; color: var(--fg); border: 1px solid #202124; border-radius: 10px;
@@ -99,13 +89,47 @@
     }
     .toc button:active { background: rgba(255,255,255,0.06); }
 
-    /* Hidden input slider style */
-    .zoom-pack { display: flex; align-items: center; gap: 8px; }
-    input[type="range"] { width: 160px; }
-
-    /* Small helpers */
     .meta { font-size: 13px; color: var(--muted); }
     .spacer { flex: 1; }
+
+    /* Bottom sliding bar (zoom + fit) */
+    .bottombar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom)) 12px;
+      backdrop-filter: var(--bar-blur);
+      background: var(--bar);
+      transform: translateY(100%);
+      transition: transform .25s ease;
+    }
+    .zoom-pack { display: flex; align-items: center; gap: 8px; }
+    input[type="range"] { width: 160px; }
+    body.chrome-visible .bottombar,
+    body.modal-open .bottombar { transform: translateY(0); }
+
+    /* Center-tap Menu Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: var(--overlay);
+      display: none; align-items: center; justify-content: center; z-index: 30;
+      backdrop-filter: blur(2px);
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: min(92vw, 520px);
+      background: #17181b;
+      border: 1px solid #24262b;
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    }
+    .modal h3 { margin: 0 0 10px 0; font-size: 18px; }
+    .modal .row { display: flex; gap: 8px; margin: 10px 0; }
+    .modal input[type="text"], .modal input[type="number"] {
+      flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #2a2d33; background: #111317; color: var(--fg);
+      font-size: 15px;
+    }
+    .modal .pill { padding: 10px 12px; border-radius: 10px; border: 1px solid #2a2d33; background: #111317; color: var(--fg); }
+    .modal .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -116,21 +140,13 @@
     <button id="aaBtn" class="btn">Aa</button>
   </div>
 
-  <div class="bottombar">
-    <div class="zoom-pack">
-      <button id="zoomOut" class="btn">−</button>
-      <input id="zoomSlider" type="range" min="70" max="220" value="100" step="5">
-      <button id="zoomIn" class="btn">+</button>
+  <div class="stage" id="stage">
+    <div class="pageWrap" id="pageWrap">
+      <canvas id="page"></canvas>
     </div>
-    <button id="fitBtn" class="btn">Подогнать ширину</button>
   </div>
 
-  <div class="stage">
-    <canvas id="page"></canvas>
-    <div class="progress"><span id="progressBar"></span></div>
-  </div>
-
-  <!-- Tap zones for navigation & chrome toggle -->
+  <!-- Tap zones -->
   <div class="tapzone tap-left"  id="zonePrev"></div>
   <div class="tapzone tap-mid"   id="zoneToggle"></div>
   <div class="tapzone tap-right" id="zoneNext"></div>
@@ -144,34 +160,93 @@
     <div class="toc" id="tocList"></div>
   </aside>
 
+  <!-- Center Menu Modal -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <h3>Меню • <span id="modalPageMeta">Стр. — / —</span></h3>
+
+      <div class="row">
+        <input id="searchInput" type="text" placeholder="Поиск по книге…" />
+        <button id="searchBtn" class="btn">Найти</button>
+      </div>
+      <div class="actions">
+        <button id="searchPrev" class="btn">◀ Пред. совп.</button>
+        <button id="searchNext" class="btn">След. совп. ▶</button>
+        <span class="pill" id="searchCount">0 совпадений</span>
+      </div>
+
+      <div class="row">
+        <input id="gotoInput" type="number" min="1" step="1" placeholder="№ страницы" />
+        <button id="gotoBtn" class="btn">Перейти</button>
+        <button id="tocBtn" class="btn">Содержание</button>
+      </div>
+
+      <div class="actions">
+        <button id="closeModal" class="btn">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom bar -->
+  <div class="bottombar">
+    <div class="zoom-pack">
+      <button id="zoomOut" class="btn">−</button>
+      <input id="zoomSlider" type="range" min="70" max="300" value="100" step="5">
+      <button id="zoomIn" class="btn">+</button>
+    </div>
+    <button id="fitBtn" class="btn">Подогнать страницу</button>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js"></script>
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
-    const PDF_URL = 'History_Climate.pdf'; // тот же источник
+    const PDF_URL = 'History_Climate.pdf';
     const canvas = document.getElementById('page');
     const ctx = canvas.getContext('2d');
     const menuBtn = document.getElementById('menuBtn');
     const aaBtn = document.getElementById('aaBtn');
-    const zoomInBtn = document.getElementById('zoomIn');
-    const zoomOutBtn = document.getElementById('zoomOut');
-    const zoomSlider = document.getElementById('zoomSlider');
-    const fitBtn = document.getElementById('fitBtn');
     const pageMeta = document.getElementById('pageMeta');
-    const progressBar = document.getElementById('progressBar');
     const drawer = document.getElementById('drawer');
     const tocList = document.getElementById('tocList');
     const zonePrev = document.getElementById('zonePrev');
     const zoneNext = document.getElementById('zoneNext');
     const zoneToggle = document.getElementById('zoneToggle');
 
-    let pdfDoc = null, pageNum = 1, totalPages = 0;
-    let scale = parseFloat(localStorage.getItem('mScale') || '1.0');
-    let fitWidth = JSON.parse(localStorage.getItem('mFitWidth') || 'true'); // по умолчанию как Kindle — подгоняем ширину
-    let showChrome = false;
+    const stage = document.getElementById('stage');
+    const pageWrap = document.getElementById('pageWrap');
 
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    const modalPageMeta = document.getElementById('modalPageMeta');
+    const searchInput = document.getElementById('searchInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const searchPrev = document.getElementById('searchPrev');
+    const searchNext = document.getElementById('searchNext');
+    const searchCount = document.getElementById('searchCount');
+    const gotoInput = document.getElementById('gotoInput');
+    const gotoBtn = document.getElementById('gotoBtn');
+    const tocBtn = document.getElementById('tocBtn');
+    const closeModal = document.getElementById('closeModal');
+
+    const zoomInBtn = document.getElementById('zoomIn');
+    const zoomOutBtn = document.getElementById('zoomOut');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const fitBtn = document.getElementById('fitBtn');
+
+    let pdfDoc = null, pageNum = 1, totalPages = 0;
+    let originalPageWidth = null;
+    let showChrome = false;
+    let mode = localStorage.getItem('mMode') || 'fit'; // 'fit' or 'manual'
+
+    // Zoom/Pan state
+    let baseScale = 1;        // width-fit scale (recalculated on resize)
+    let userScale = 1;        // additional zoom from slider/pinch (1 = 100%)
+    let panX = 0, panY = 0;   // in CSS pixels
+    let lastGesture = 0;
+
+    // Simple TOC
     const tocEntries = [
       { title: 'Введение', page: 2 },
       { title: 'Глава 1. Климат и история', page: 4 },
@@ -186,117 +261,268 @@
       { title: 'Глава 10. Современные изменения климата', page: 253 }
     ];
 
-    // Build TOC
-    tocEntries.forEach(ent => {
-      const b = document.createElement('button');
-      b.textContent = ent.title;
-      b.addEventListener('click', () => { pageNum = ent.page; savePos(); render(); closeDrawer(); });
-      tocList.appendChild(b);
-    });
+    function buildTOC() {
+      tocList.innerHTML = '';
+      tocEntries.forEach(ent => {
+        const b = document.createElement('button');
+        b.textContent = ent.title;
+        b.addEventListener('click', () => { pageNum = ent.page; savePos(); render(true); drawer.classList.remove('open'); closeMenu(); });
+        tocList.appendChild(b);
+      });
+    }
 
     function savePos() {
       localStorage.setItem('mPage', String(pageNum));
-      localStorage.setItem('mScale', String(scale));
-      localStorage.setItem('mFitWidth', JSON.stringify(fitWidth));
+      localStorage.setItem('mMode', mode);
+      localStorage.setItem('mUserScale', String(Math.round(userScale*100)));
     }
 
-    function openDrawer() { drawer.classList.add('open'); }
-    function closeDrawer() { drawer.classList.remove('open'); }
-    function toggleChrome() {
-      showChrome = !showChrome;
-      document.body.classList.toggle('chrome-visible', showChrome);
+    function setBodyState(key, on) { document.body.classList.toggle(key, on); }
+
+    function toggleChrome(show) {
+      if (typeof show === 'boolean') showChrome = show; else showChrome = !showChrome;
+      setBodyState('chrome-visible', showChrome);
+    }
+
+    function openMenu() {
+      modalPageMeta.textContent = `Стр. ${pageNum} / ${totalPages}`;
+      modalBackdrop.classList.add('open');
+      setBodyState('modal-open', true);
+      // Sync slider with current zoom
+      zoomSlider.value = String(Math.round(userScale*100));
+    }
+    function closeMenu() {
+      modalBackdrop.classList.remove('open');
+      setBodyState('modal-open', false);
     }
 
     function updateMeta() {
       pageMeta.textContent = `Стр. ${pageNum} / ${totalPages}`;
-      const p = totalPages ? Math.max(0, Math.min(100, Math.round(pageNum / totalPages * 100))) : 0;
-      progressBar.style.width = p + '%';
+      modalPageMeta.textContent = `Стр. ${pageNum} / ${totalPages}`;
     }
 
-    // Core render (DPR-aware)
-    let originalPageWidth = null;
     pdfjsLib.getDocument(PDF_URL).promise.then(pdf => {
       pdfDoc = pdf; totalPages = pdf.numPages;
       const storedPage = parseInt(localStorage.getItem('mPage') || '1', 10);
       if (!isNaN(storedPage) && storedPage >= 1 && storedPage <= totalPages) pageNum = storedPage;
-      render();
+      const storedUserScale = parseInt(localStorage.getItem('mUserScale') || '100', 10);
+      if (!isNaN(storedUserScale)) userScale = Math.max(0.7, Math.min(3.0, storedUserScale/100));
+      buildTOC();
+      render(true);
     }).catch(err => console.error('PDF load error:', err));
 
-    function render() {
+    function computeBaseScale(page) {
+      const targetW = Math.min(window.innerWidth, document.documentElement.clientWidth);
+      const vp1 = page.getViewport({ scale: 1 });
+      originalPageWidth = vp1.width;
+      return targetW / originalPageWidth;
+    }
+
+    function applyPanClamp() {
+      // Clamp pan so that blank margins don’t appear too far; allow a little overscroll elasticity
+      const wrapRect = pageWrap.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      const overX = Math.max(0, (wrapRect.width - stageRect.width)/2);
+      const overY = Math.max(0, (wrapRect.height - stageRect.height)/2);
+      panX = Math.max(-overX-60, Math.min(overX+60, panX));
+      panY = Math.max(-overY-60, Math.min(overY+60, panY));
+    }
+
+    function applyTransform() {
+      pageWrap.style.transform = `translate(calc(50% + ${panX}px), calc(50% + ${panY}px)) translate(-50%,-50%) scale(${userScale})`;
+    }
+
+    let rerenderScheduled = null;
+    function scheduleHiDpiRerender() {
+      // Debounce re-render at the new zoom level so images stay crisp
+      if (rerenderScheduled) cancelAnimationFrame(rerenderScheduled);
+      rerenderScheduled = requestAnimationFrame(() => render(false));
+    }
+
+    function render(initial=false) {
       if (!pdfDoc) return;
       pdfDoc.getPage(pageNum).then(page => {
+        baseScale = computeBaseScale(page);
         const dpr = window.devicePixelRatio || 1;
-        if (!originalPageWidth) {
-          originalPageWidth = page.getViewport({ scale: 1 }).width;
-        }
-        // Calculate scale
-        let s = scale;
-        if (fitWidth) {
-          const target = Math.min(window.innerWidth, document.documentElement.clientWidth);
-          s = target / originalPageWidth;
-        }
+        const s = baseScale * userScale;
         const viewport = page.getViewport({ scale: s });
-        const outW = Math.floor(viewport.width * dpr);
-        const outH = Math.floor(viewport.height * dpr);
-        canvas.width = outW; canvas.height = outH;
+        canvas.width = Math.floor(viewport.width * dpr);
+        canvas.height = Math.floor(viewport.height * dpr);
         canvas.style.width = Math.floor(viewport.width) + 'px';
         canvas.style.height = Math.floor(viewport.height) + 'px';
-
         const rc = { canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null };
         page.render(rc).promise.then(() => {
           updateMeta();
+          if (initial) {
+            // Reset pan on first render/page change
+            panX = 0; panY = 0;
+            applyTransform();
+          } else {
+            applyPanClamp();
+            applyTransform();
+          }
         });
       });
     }
 
-    // Simple gestures
-    zonePrev.addEventListener('click', () => { if (pageNum > 1) { pageNum--; savePos(); render(); } });
-    zoneNext.addEventListener('click', () => { if (pageNum < totalPages) { pageNum++; savePos(); render(); } });
-    zoneToggle.addEventListener('click', toggleChrome);
+    // Paging taps (always available)
+    zonePrev.addEventListener('click', () => { if (pageNum > 1) { pageNum--; savePos(); render(true); } });
+    zoneNext.addEventListener('click', () => { if (pageNum < totalPages) { pageNum++; savePos(); render(true); } });
+    zoneToggle.addEventListener('click', () => { openMenu(); toggleChrome(true); });
 
-    // Swipe
-    let startX = 0, startY = 0, active = false;
-    window.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
-      active = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-    }, {passive:true});
-    window.addEventListener('touchend', (e) => {
-      if (!active) return; active = false;
-      const dx = (e.changedTouches[0].clientX - startX);
-      const dy = (e.changedTouches[0].clientY - startY);
-      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
-        if (dx < 0 && pageNum < totalPages) { pageNum++; savePos(); render(); }
-        if (dx > 0 && pageNum > 1) { pageNum--; savePos(); render(); }
-      } else {
-        toggleChrome();
+    // Gestures: pinch to zoom, one-finger pan when zoomed; otherwise swipe page
+    let touchMode = 'idle'; // 'idle' | 'pan' | 'pinch' | 'swipe'
+    let lastX=0, lastY=0, lastDX=0, lastDY=0, startX=0, startY=0;
+    let startDist=0, startScale=1;
+
+    function dist(t0,t1){ const dx=t1.clientX-t0.clientX, dy=t1.clientY-t0.clientY; return Math.hypot(dx,dy); }
+
+    stage.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        touchMode = 'pinch';
+        startDist = dist(e.touches[0], e.touches[1]);
+        startScale = userScale;
+      } else if (e.touches.length === 1) {
+        startX = lastX = e.touches[0].clientX;
+        startY = lastY = e.touches[0].clientY;
+        if (userScale > 1.02) {
+          touchMode = 'pan';
+        } else {
+          touchMode = 'swipe';
+        }
       }
-    }, {passive:true});
+    }, {passive:false});
 
-    // Zoom controls
-    function setScaleFromSlider(v) {
-      fitWidth = false;
-      scale = Math.max(0.5, Math.min(3.0, v / 100));
-      savePos(); render();
-    }
-    zoomSlider.addEventListener('input', (e) => setScaleFromSlider(parseInt(e.target.value,10)));
-    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setScaleFromSlider(parseInt(zoomSlider.value,10)); });
-    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(70, parseInt(zoomSlider.value,10) - 10); setScaleFromSlider(parseInt(zoomSlider.value,10)); });
-    fitBtn.addEventListener('click', () => { fitWidth = true; savePos(); render(); });
+    stage.addEventListener('touchmove', (e) => {
+      if (touchMode === 'pinch' && e.touches.length === 2) {
+        e.preventDefault();
+        const d = dist(e.touches[0], e.touches[1]);
+        const factor = d / (startDist || d);
+        userScale = Math.max(0.7, Math.min(3.0, startScale * factor));
+        zoomSlider.value = String(Math.round(userScale*100));
+        mode = 'manual';
+        applyPanClamp();
+        applyTransform();
+        scheduleHiDpiRerender();
+      } else if (touchMode === 'pan' && e.touches.length === 1) {
+        e.preventDefault();
+        const x = e.touches[0].clientX, y = e.touches[0].clientY;
+        const dx = x - lastX, dy = y - lastY;
+        lastX = x; lastY = y;
+        panX += dx; panY += dy;
+        applyPanClamp();
+        applyTransform();
+      } else if (touchMode === 'swipe' && e.touches.length === 1) {
+        // Let swipe finish on touchend to decide direction
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      }
+    }, {passive:false});
+
+    stage.addEventListener('touchend', (e) => {
+      if (touchMode === 'swipe') {
+        const dx = lastX - startX, dy = lastY - startY;
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+          if (dx < 0 && pageNum < totalPages) { pageNum++; savePos(); render(true); }
+          if (dx > 0 && pageNum > 1) { pageNum--; savePos(); render(true); }
+        }
+      }
+      if (touchMode === 'pinch') {
+        scheduleHiDpiRerender();
+      }
+      touchMode = 'idle';
+    }, {passive:false});
 
     // Topbar buttons
     menuBtn.addEventListener('click', () => { drawer.classList.toggle('open'); });
-    aaBtn.addEventListener('click', () => { toggleChrome(); }); // acts as quick chrome toggle
+    aaBtn.addEventListener('click', () => toggleChrome());
 
-    // Orientation / resize reflow
-    window.addEventListener('resize', () => { render(); });
+    tocBtn.addEventListener('click', () => { drawer.classList.add('open'); });
+    closeModal.addEventListener('click', () => { closeMenu(); toggleChrome(false); });
 
-    // Close drawer on outside swipe from left
+    // Go to page
+    gotoBtn.addEventListener('click', () => {
+      const p = parseInt(gotoInput.value || '0', 10);
+      if (!isNaN(p) && p >= 1 && p <= totalPages) {
+        pageNum = p; savePos(); render(true); closeMenu(); toggleChrome(false);
+      }
+    });
+
+    // Search across pages
+    let searchResults = [];
+    let searchIndex = -1;
+    let textCache = {}; // pageNum -> text
+
+    async function getPageText(num) {
+      if (textCache[num]) return textCache[num];
+      const pg = await pdfDoc.getPage(num);
+      const content = await pg.getTextContent();
+      const strings = content.items.map(it => it.str);
+      const text = strings.join(' ');
+      textCache[num] = text;
+      return text;
+    }
+
+    async function buildSearch(q) {
+      searchResults = [];
+      searchIndex = -1;
+      if (!q) { searchCount.textContent = '0 совпадений'; return; }
+      const needle = q.toLowerCase();
+      for (let i = 1; i <= totalPages; i++) {
+        const txt = (await getPageText(i)).toLowerCase();
+        if (txt.includes(needle)) searchResults.push(i);
+      }
+      searchCount.textContent = searchResults.length + ' совпадений';
+      if (searchResults.length) {
+        // jump to first result near current page
+        const nearest = searchResults.reduce((best, p) => {
+          const d = Math.abs(p - pageNum);
+          if (best === null || d < Math.abs(best - pageNum)) return p;
+          return best;
+        }, null);
+        searchIndex = searchResults.indexOf(nearest);
+        pageNum = nearest; savePos(); render(true);
+      }
+    }
+
+    function gotoSearch(offset) {
+      if (!searchResults.length) return;
+      searchIndex = (searchIndex + offset + searchResults.length) % searchResults.length;
+      pageNum = searchResults[searchIndex];
+      savePos(); render(true);
+    }
+
+    searchBtn.addEventListener('click', () => buildSearch(searchInput.value.trim()));
+    searchNext.addEventListener('click', () => gotoSearch(+1));
+    searchPrev.addEventListener('click', () => gotoSearch(-1));
+
+    // Zoom controls in bottom bar
+    function setScaleFromSlider(v) {
+      mode = 'manual';
+      userScale = Math.max(0.7, Math.min(3.0, v / 100));
+      savePos();
+      scheduleHiDpiRerender();
+      applyPanClamp();
+      applyTransform();
+    }
+    zoomSlider.addEventListener('input', (e) => setScaleFromSlider(parseInt(e.target.value,10)));
+    zoomInBtn.addEventListener('click', () => setScaleFromSlider(Math.min(300, parseInt(zoomSlider.value,10) + 10)));
+    zoomOutBtn.addEventListener('click', () => setScaleFromSlider(Math.max(70, parseInt(zoomSlider.value,10) - 10)));
+    fitBtn.addEventListener('click', () => {
+      mode = 'fit'; userScale = 1; panX = 0; panY = 0; zoomSlider.value = '100';
+      savePos(); render(true);
+    });
+
+    // Orientation / resize reflow -> width-fit base recalculated
+    window.addEventListener('resize', () => render(false));
+
+    // Close drawer with swipe
     let drawerStartX = null;
     drawer.addEventListener('touchstart', (e) => { if (e.touches.length===1) drawerStartX = e.touches[0].clientX; }, {passive:true});
     drawer.addEventListener('touchend', (e) => {
       if (drawerStartX==null) return;
       const dx = e.changedTouches[0].clientX - drawerStartX;
-      if (dx > 70) closeDrawer();
+      if (dx > 70) drawer.classList.remove('open');
       drawerStartX = null;
     }, {passive:true});
   </script>
