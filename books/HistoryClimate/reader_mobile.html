@@ -12,47 +12,102 @@
       --accent: #8ab4f8;
       --bar: rgba(0,0,0,0.7);
       --bar-blur: blur(6px);
-      --overlay: rgba(0,0,0,0.55);
-      --danger: #ff6b6b;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; }
-    body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
-    .topbar { position: fixed; left: 0; right: 0; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px;
-      padding: env(safe-area-inset-top) 12px 12px 12px; backdrop-filter: var(--bar-blur); background: var(--bar);
-      transform: translateY(-100%); transition: transform .25s ease; }
-    body.chrome-visible .topbar, body.modal-open .topbar { transform: translateY(0); }
-    .btn { appearance: none; border: 0; border-radius: 12px; padding: 8px 12px; background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+      overscroll-behavior: none;
+    }
+
+    /* Chrome (top/bottom overlays) */
+    .topbar, .bottombar {
+      position: fixed; left: 0; right: 0; z-index: 10;
+      display: flex; align-items: center; gap: 12px;
+      padding: env(safe-area-inset-top) 12px 12px 12px;
+      backdrop-filter: var(--bar-blur);
+      background: var(--bar);
+      transform: translateY(-100%);
+      transition: transform .25s ease;
+    }
+    .bottombar {
+      bottom: 0; top: auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)) 12px;
+      transform: translateY(100%);
+      justify-content: space-between;
+    }
+    body.chrome-visible .topbar { transform: translateY(0); }
+    body.chrome-visible .bottombar { transform: translateY(0); }
+
+    .btn {
+      appearance: none; border: 0; border-radius: 12px; padding: 8px 12px;
+      background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px;
+    }
     .btn:active { background: rgba(255,255,255,0.1); }
     .icon { font-size: 20px; line-height: 1; }
-    /* Stage centers content with CSS grid */
-    .stage { position: fixed; inset: 0; overflow: hidden; touch-action: none; background: var(--bg); display: grid; place-items: center; }
-    .center { position: relative; }
-    .pageWrap { position: relative; will-change: transform; }
-    canvas { display: block; background: #fff; max-width: 100%; height: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
-    .tapzone { position: fixed; top: 0; bottom: 0; width: 22%; z-index: 5; }
-    .tap-left{ left:0;} .tap-right{ right:0;} .tap-mid{ left:22%; right:22%; width:auto; }
-    .drawer { position: fixed; top: 0; bottom: 0; right: 0; width: min(88vw, 380px); z-index: 20; background:#121316; border-left:1px solid #202124; transform: translateX(100%); transition: transform .25s ease; display:flex; flex-direction:column; }
-    .drawer.open{ transform: translateX(0); } .drawer header{ padding:16px; border-bottom:1px solid #202124; font-weight:600; } .drawer .toc{ flex:1; overflow:auto; padding:6px 8px 16px 8px; }
-    .toc button{ width:100%; text-align:left; padding:10px 12px; margin:6px 4px; background:transparent; color:var(--fg); border:1px solid #202124; border-radius:10px; font-size:15px; }
-    .toc button:active{ background: rgba(255,255,255,0.06); }
-    .meta { font-size: 13px; color: var(--muted); } .spacer{ flex:1; }
-    .bottombar { position: fixed; left:0; right:0; bottom:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:12px;
-      padding:10px 12px calc(10px + env(safe-area-inset-bottom)) 12px; backdrop-filter: var(--bar-blur); background: var(--bar);
-      transform: translateY(100%); transition: transform .25s ease; }
-    .zoom-pack{ display:flex; align-items:center; gap:8px; } input[type="range"]{ width:160px; }
-    body.chrome-visible .bottombar, body.modal-open .bottombar{ transform: translateY(0); }
-    .modal-backdrop{ position: fixed; inset: 0; background: var(--overlay); display: none; align-items: center; justify-content: center; z-index: 30; backdrop-filter: blur(2px); }
-    .modal-backdrop.open{ display:flex; }
-    .modal{ width:min(92vw,520px); background:#17181b; border:1px solid #24262b; border-radius:16px; padding:14px; box-shadow:0 10px 40px rgba(0,0,0,0.6); }
-    .modal h3{ margin:0 0 10px 0; font-size:18px; }
-    .modal .row{ display:flex; gap:8px; margin:10px 0; }
-    .modal input[type="text"], .modal input[type="number"]{ flex:1; padding:10px 12px; border-radius:10px; border:1px solid #2a2d33; background:#111317; color:var(--fg); font-size:15px; }
-    .modal .pill{ padding:10px 12px; border-radius:10px; border:1px solid #2a2d33; background:#111317; color:var(--fg); }
-    .modal .actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
-    .error { position: fixed; left: 50%; top: 20px; transform: translateX(-50%); background: #1d1111; border: 1px solid #3a2020; color: var(--danger);
-      padding: 10px 12px; border-radius: 10px; z-index: 50; font-size: 14px; display: none; max-width: 90vw; }
-    .error.show { display: block; }
+
+    /* Canvas wrap */
+    .scroller { width: 100%; height: 100%; overflow-y: hidden; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+    body.scrollY .scroller { overflow-y: auto; }
+    .stage {
+      position: fixed; inset: 0;
+      display: grid; place-items: center;
+      touch-action: manipulation; /* we'll manage pinch separately */
+    }
+    canvas {
+      display: block;
+      background: #fff;
+      max-width: 100%;
+      height: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    /* Tap zones */
+    .tapzone {
+      position: fixed; top: 0; bottom: 0; width: 33.34%; z-index: 5;
+    }
+    .tap-left  { left: 0; }
+    .tap-mid   { left: 33.34%; }
+    .tap-right { right: 0; }
+
+    /* Progress */
+    .progress {
+      position: absolute; left: 0; bottom: 0;
+      height: 3px; width: 100%; background: rgba(255,255,255,0.08);
+    }
+    .progress > span {
+      display: block; height: 100%; width: 0;
+      background: var(--accent); transition: width .2s ease;
+    }
+
+    /* Drawer (TOC) */
+    .drawer {
+      position: fixed; top: 0; bottom: 0; right: 0; width: min(88vw, 380px); z-index: 20;
+      background: #121316; border-left: 1px solid #202124; transform: translateX(100%);
+      transition: transform .25s ease;
+      display: flex; flex-direction: column;
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer header { padding: 16px; border-bottom: 1px solid #202124; font-weight: 600; }
+    .drawer .toc {
+      flex: 1; overflow: auto; padding: 6px 8px 16px 8px;
+    }
+    .toc button {
+      width: 100%; text-align: left; padding: 10px 12px; margin: 6px 4px;
+      background: transparent; color: var(--fg); border: 1px solid #202124; border-radius: 10px;
+      font-size: 15px;
+    }
+    .toc button:active { background: rgba(255,255,255,0.06); }
+
+    /* Hidden input slider style */
+    .zoom-pack { display: flex; align-items: center; gap: 8px; }
+    input[type="range"] { width: 160px; }
+
+    /* Small helpers */
+    .meta { font-size: 13px; color: var(--muted); }
+    .spacer { flex: 1; }
   </style>
 </head>
 <body>
@@ -63,54 +118,35 @@
     <button id="aaBtn" class="btn">Aa</button>
   </div>
 
-  <div class="stage" id="stage">
-    <div class="center">
-      <div class="pageWrap" id="pageWrap"><canvas id="page"></canvas></div>
+  <div class="bottombar">
+    <div class="zoom-pack">
+      <button id="zoomOut" class="btn">−</button>
+      <input id="zoomSlider" type="range" min="70" max="220" value="100" step="5">
+      <button id="zoomIn" class="btn">+</button>
     </div>
+    <button id="fitBtn" class="btn">Подогнать ширину</button>
   </div>
 
+  <div class="stage">
+    <div class="scroller" id="scroller">
+    <canvas id="page"></canvas>
+    </div>
+    <div class="progress"><span id="progressBar"></span></div>
+  </div>
+
+  <!-- Tap zones for navigation & chrome toggle -->
   <div class="tapzone tap-left"  id="zonePrev"></div>
   <div class="tapzone tap-mid"   id="zoneToggle"></div>
   <div class="tapzone tap-right" id="zoneNext"></div>
 
+  <!-- TOC Drawer -->
   <aside class="drawer" id="drawer">
-    <header>Содержание<div class="meta">Коснитесь главы для перехода</div></header>
+    <header>
+      Содержание
+      <div class="meta">Коснитесь главы для перехода</div>
+    </header>
     <div class="toc" id="tocList"></div>
   </aside>
-
-  <div class="modal-backdrop" id="modalBackdrop">
-    <div class="modal">
-      <h3>Меню • <span id="modalPageMeta">Стр. — / —</span></h3>
-      <div class="row">
-        <input id="searchInput" type="text" placeholder="Поиск по книге…" />
-        <button id="searchBtn" class="btn">Найти</button>
-      </div>
-      <div class="actions">
-        <button id="searchPrev" class="btn">◀ Пред. совп.</button>
-        <button id="searchNext" class="btn">След. совп. ▶</button>
-        <span class="pill" id="searchCount">0 совпадений</span>
-      </div>
-      <div class="row">
-        <input id="gotoInput" type="number" min="1" step="1" placeholder="№ страницы" />
-        <button id="gotoBtn" class="btn">Перейти</button>
-        <button id="tocBtn" class="btn">Содержание</button>
-      </div>
-      <div class="actions">
-        <button id="closeModal" class="btn">Закрыть</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="bottombar">
-    <div class="zoom-pack">
-      <button id="zoomOut" class="btn">−</button>
-      <input id="zoomSlider" type="range" min="70" max="300" value="100" step="5">
-      <button id="zoomIn" class="btn">+</button>
-    </div>
-    <button id="fitBtn" class="btn">Подогнать страницу</button>
-  </div>
-
-  <div id="errorBox" class="error"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js"></script>
@@ -118,152 +154,171 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
-    function showError(msg){ const b=document.getElementById('errorBox'); b.textContent=msg; b.classList.add('show'); setTimeout(()=>b.classList.remove('show'),8000); console.error(msg); }
+    const PDF_URL = 'History_Climate.pdf'; // тот же источник
+    const canvas = document.getElementById('page');
+    const scroller = document.getElementById('scroller');
 
-    const params = new URLSearchParams(location.search);
-    if (params.get('reset') === '1') {
-      localStorage.removeItem('mPage');
-      localStorage.removeItem('mUserScale');
+    function setScrollMode(on) {
+      document.body.classList.toggle('scrollY', !!on);
+      if (!on) scroller.scrollTop = 0;
     }
 
-    // Hard-coded PDF
-    const PDF_URL = 'History_Climate.pdf';
+    function shouldScroll() {
+      // Enable scroll if the rendered page is taller than the viewport (common in landscape fit-by-width)
+      const stageH = document.documentElement.clientHeight;
+      const canvasH = parseFloat(canvas.style.height) || canvas.height;
+      return canvasH > stageH + 1; // +1 for rounding
+    }
 
-    const canvas = document.getElementById('page'), ctx = canvas.getContext('2d');
-    const menuBtn = document.getElementById('menuBtn'), aaBtn = document.getElementById('aaBtn');
-    const pageMeta = document.getElementById('pageMeta'), drawer = document.getElementById('drawer'), tocList = document.getElementById('tocList');
-    const zonePrev = document.getElementById('zonePrev'), zoneNext = document.getElementById('zoneNext'), zoneToggle = document.getElementById('zoneToggle');
-    const stage = document.getElementById('stage'), pageWrap = document.getElementById('pageWrap');
-    const modalBackdrop = document.getElementById('modalBackdrop'), modalPageMeta = document.getElementById('modalPageMeta');
-    const searchInput = document.getElementById('searchInput'), searchBtn = document.getElementById('searchBtn');
-    const searchPrev = document.getElementById('searchPrev'), searchNext = document.getElementById('searchNext'), searchCount = document.getElementById('searchCount');
-    const gotoInput = document.getElementById('gotoInput'), gotoBtn = document.getElementById('gotoBtn'), tocBtn = document.getElementById('tocBtn'), closeModal = document.getElementById('closeModal');
-    const zoomInBtn = document.getElementById('zoomIn'), zoomOutBtn = document.getElementById('zoomOut'), zoomSlider = document.getElementById('zoomSlider'), fitBtn = document.getElementById('fitBtn');
+    const ctx = canvas.getContext('2d');
+    const menuBtn = document.getElementById('menuBtn');
+    const aaBtn = document.getElementById('aaBtn');
+    const zoomInBtn = document.getElementById('zoomIn');
+    const zoomOutBtn = document.getElementById('zoomOut');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const fitBtn = document.getElementById('fitBtn');
+    const pageMeta = document.getElementById('pageMeta');
+    const progressBar = document.getElementById('progressBar');
+    const drawer = document.getElementById('drawer');
+    const tocList = document.getElementById('tocList');
+    const zonePrev = document.getElementById('zonePrev');
+    const zoneNext = document.getElementById('zoneNext');
+    const zoneToggle = document.getElementById('zoneToggle');
 
-    let pdfDoc=null, pageNum=1, totalPages=0, originalPageWidth=null;
-    let userScale=Math.max(0.7, Math.min(3.0, parseInt(localStorage.getItem('mUserScale')||'100',10)/100));
-    let panX=0, panY=0;
+    let pdfDoc = null, pageNum = 1, totalPages = 0;
+    let scale = parseFloat(localStorage.getItem('mScale') || '1.0');
+    let fitWidth = JSON.parse(localStorage.getItem('mFitWidth') || 'true'); // по умолчанию как Kindle — подгоняем ширину
+    let showChrome = false;
 
-    const tocEntries=[
-      { title:'Введение', page:2 },{ title:'Глава 1. Климат и история', page:4 },{ title:'Глава 2. Эти таинственные шумеры', page:36 },
-      { title:'Глава 3. Убейдцы и шумеры', page:70 },{ title:'Глава 4. Конец периода Джемдет-Наср.', page:109 },{ title:'Глава 5. Войны номов', page:131 },
-      { title:'Глава 6. Расцвет и гибель Аккадского царства', page:149 },{ title:'Глава 7. Возвышение Ура и появление амореев', page:165 },
-      { title:'Глава 8. Ближний Восток в ХVI-ХIV веках до н. э.', page:192 },{ title:'Глава 9. Коллапс бронзового века', page:217 },{ title:'Глава 10. Современные изменения климата', page:253 }
+    const tocEntries = [
+      { title: 'Введение', page: 2 },
+      { title: 'Глава 1. Климат и история', page: 4 },
+      { title: 'Глава 2. Эти таинственные шумеры', page: 36 },
+      { title: 'Глава 3. Убейдцы и шумеры', page: 70 },
+      { title: 'Глава 4. Конец периода Джемдет-Наср.', page: 109 },
+      { title: 'Глава 5. Войны номов', page: 131 },
+      { title: 'Глава 6. Расцвет и гибель Аккадского царства', page: 149 },
+      { title: 'Глава 7. Возвышение Ура и появление амореев', page: 165 },
+      { title: 'Глава 8. Ближний Восток в ХVI-ХIV веках до н. э.', page: 192 },
+      { title: 'Глава 9. Коллапс бронзового века', page: 217 },
+      { title: 'Глава 10. Современные изменения климата', page: 253 }
     ];
-    function buildTOC(){ tocList.innerHTML=''; tocEntries.forEach(ent=>{ const b=document.createElement('button'); b.textContent=ent.title; b.addEventListener('click',()=>{ pageNum=ent.page; savePos(); render(true); drawer.classList.remove('open'); closeMenu(); }); tocList.appendChild(b); }); }
 
-    function savePos(){ localStorage.setItem('mPage', String(pageNum)); localStorage.setItem('mUserScale', String(Math.round(userScale*100))); }
-    function setBodyState(k,on){ document.body.classList.toggle(k,on); }
-    function toggleChrome(show){ document.body.classList.toggle('chrome-visible', !!show); }
-    function openMenu(){ modalPageMeta.textContent=`Стр. ${pageNum} / ${totalPages}`; modalBackdrop.classList.add('open'); document.body.classList.add('modal-open','chrome-visible'); zoomSlider.value=String(Math.round(userScale*100)); }
-    function closeMenu(){ modalBackdrop.classList.remove('open'); document.body.classList.remove('modal-open'); }
-    function updateMeta(){ pageMeta.textContent=`Стр. ${pageNum} / ${totalPages}`; modalPageMeta.textContent=`Стр. ${pageNum} / ${totalPages}`; }
+    // Build TOC
+    tocEntries.forEach(ent => {
+      const b = document.createElement('button');
+      b.textContent = ent.title;
+      b.addEventListener('click', () => { pageNum = ent.page; savePos(); render(); closeDrawer(); });
+      tocList.appendChild(b);
+    });
 
-    pdfjsLib.getDocument(PDF_URL).promise.then(pdf=>{
-      pdfDoc=pdf; totalPages=pdf.numPages;
-      const storedPage=parseInt(localStorage.getItem('mPage')||'1',10);
-      if(!isNaN(storedPage) && storedPage>=1 && storedPage<=totalPages) pageNum=storedPage;
-      buildTOC(); render(true);
-    }).catch(err=>showError('Ошибка загрузки PDF: '+err.message));
-
-    function fitScaleToWidth(page) {
-      const targetW = Math.min(window.innerWidth, document.documentElement.clientWidth);
-      const vp1 = page.getViewport({ scale: 1 });
-      originalPageWidth = vp1.width;
-      return targetW / originalPageWidth;
+    function savePos() {
+      localStorage.setItem('mPage', String(pageNum));
+      localStorage.setItem('mScale', String(scale));
+      localStorage.setItem('mFitWidth', JSON.stringify(fitWidth));
     }
 
-    function render(resetPan=false){
-      if(!pdfDoc) return;
-      pdfDoc.getPage(pageNum).then(page=>{
-        const base = fitScaleToWidth(page);
+    function openDrawer() { drawer.classList.add('open'); }
+    function closeDrawer() { drawer.classList.remove('open'); }
+    function toggleChrome() {
+      showChrome = !showChrome;
+      document.body.classList.toggle('chrome-visible', showChrome);
+    }
+
+    function updateMeta() {
+      pageMeta.textContent = `Стр. ${pageNum} / ${totalPages}`;
+      const p = totalPages ? Math.max(0, Math.min(100, Math.round(pageNum / totalPages * 100))) : 0;
+      progressBar.style.width = p + '%';
+    }
+
+    // Core render (DPR-aware)
+    let originalPageWidth = null;
+    pdfjsLib.getDocument(PDF_URL).promise.then(pdf => {
+      pdfDoc = pdf; totalPages = pdf.numPages;
+      const storedPage = parseInt(localStorage.getItem('mPage') || '1', 10);
+      if (!isNaN(storedPage) && storedPage >= 1 && storedPage <= totalPages) pageNum = storedPage;
+      render();
+    }).catch(err => console.error('PDF load error:', err));
+
+    function render() {
+      if (!pdfDoc) return;
+      pdfDoc.getPage(pageNum).then(page => {
         const dpr = window.devicePixelRatio || 1;
-        const s = base * userScale;
-        const vp = page.getViewport({ scale: s });
-        canvas.width = Math.floor(vp.width * dpr);
-        canvas.height = Math.floor(vp.height * dpr);
-        canvas.style.width = Math.floor(vp.width) + 'px';
-        canvas.style.height = Math.floor(vp.height) + 'px';
-        page.render({canvasContext:ctx, viewport:vp, transform:dpr!==1?[dpr,0,0,dpr,0,0]:null}).promise.then(()=>{
+        if (!originalPageWidth) {
+          originalPageWidth = page.getViewport({ scale: 1 }).width;
+        }
+        // Calculate scale
+        let s = scale;
+        if (fitWidth) {
+          const target = Math.min(window.innerWidth, document.documentElement.clientWidth);
+          s = target / originalPageWidth;
+        }
+        const viewport = page.getViewport({ scale: s });
+        const outW = Math.floor(viewport.width * dpr);
+        const outH = Math.floor(viewport.height * dpr);
+        canvas.width = outW; canvas.height = outH;
+        canvas.style.width = Math.floor(viewport.width) + 'px';
+        canvas.style.height = Math.floor(viewport.height) + 'px';
+
+        const rc = { canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null };
+        page.render(rc).promise.then(() => {
           updateMeta();
-          if (resetPan) { panX = 0; panY = 0; }
-          clampPan(); applyPan();
+          setScrollMode(shouldScroll());
         });
-      }).catch(err=>showError('Ошибка рендеринга: '+err.message));
+      });
     }
 
-    function viewportSize(){ const sr=stage.getBoundingClientRect(); return {w:sr.width, h:sr.height}; }
-    function canvasSize(){ return {w: parseFloat(canvas.style.width)||canvas.width, h: parseFloat(canvas.style.height)||canvas.height}; }
+    // Simple gestures
+    zonePrev.addEventListener('click', () => { if (pageNum > 1) { pageNum--; savePos(); render(); } });
+    zoneNext.addEventListener('click', () => { if (pageNum < totalPages) { pageNum++; savePos(); render(); } });
+    zoneToggle.addEventListener('click', toggleChrome);
 
-    function clampPan(){
-      const v = viewportSize(), c = canvasSize();
-      const overX = Math.max(0, (c.w - v.w)/2), overY = Math.max(0, (c.h - v.h)/2);
-      panX = Math.max(-overX-60, Math.min(overX+60, panX));
-      panY = Math.max(-overY-60, Math.min(overY+60, panY));
-    }
-    function applyPan(){ pageWrap.style.transform = `translate(${panX}px, ${panY}px)`; }
-
-    // Paging via taps
-    zonePrev.addEventListener('click', ()=>{ if(pageNum>1){ pageNum--; savePos(); render(true);} });
-    zoneNext.addEventListener('click', ()=>{ if(pageNum<totalPages){ pageNum++; savePos(); render(true);} });
-    zoneToggle.addEventListener('click', ()=>{ openMenu(); });
-
-    // Gestures
-    let mode='idle', startX=0, startY=0, lastX=0, lastY=0, startDist=0, startScale=1;
-    function dist(t0,t1){ const dx=t1.clientX-t0.clientX, dy=t1.clientY-t0.clientY; return Math.hypot(dx,dy); }
-
-    stage.addEventListener('touchstart', e=>{
-      if(e.touches.length===2){ mode='pinch'; startDist=dist(e.touches[0],e.touches[1]); startScale=userScale; }
-      else if(e.touches.length===1){ startX=lastX=e.touches[0].clientX; startY=lastY=e.touches[0].clientY; mode=(userScale>1.02)?'pan':'swipe'; }
-    }, {passive:false});
-
-    stage.addEventListener('touchmove', e=>{
-      if(mode==='pinch'&&e.touches.length===2){
-        e.preventDefault();
-        const d=dist(e.touches[0],e.touches[1]); const factor=d/(startDist||d);
-        userScale=Math.max(0.7, Math.min(3.0, startScale*factor));
-        zoomSlider.value = String(Math.round(userScale*100));
-        render(false); // redraw at new scale
-      } else if(mode==='pan'&&e.touches.length===1){
-        e.preventDefault();
-        const x=e.touches[0].clientX, y=e.touches[0].clientY;
-        panX += (x-lastX); panY += (y-lastY); lastX=x; lastY=y; clampPan(); applyPan();
-      } else if(mode==='swipe'&&e.touches.length===1){
-        lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+    // Swipe
+    let startX = 0, startY = 0, active = false;
+    window.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      active = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    }, {passive:true});
+    window.addEventListener('touchend', (e) => {
+      if (!active) return; active = false;
+      const dx = (e.changedTouches[0].clientX - startX);
+      const dy = (e.changedTouches[0].clientY - startY);
+      const preferVertical = Math.abs(dy) > Math.abs(dx) && document.body.classList.contains('scrollY');
+      if (!preferVertical && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+        if (dx < 0 && pageNum < totalPages) { pageNum++; savePos(); render(); }
+        if (dx > 0 && pageNum > 1) { pageNum--; savePos(); render(); }
+      } else {
+        toggleChrome();
       }
-    }, {passive:false});
+    }, {passive:true});
 
-    stage.addEventListener('touchend', e=>{
-      if(mode==='swipe'){ const dx=lastX-startX, dy=lastY-startY; if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>40){ if(dx<0&&pageNum<totalPages){ pageNum++; savePos(); render(true);} if(dx>0&&pageNum>1){ pageNum--; savePos(); render(true);} } }
-      mode='idle';
-    }, {passive:false});
+    // Zoom controls
+    function setScaleFromSlider(v) {
+      fitWidth = false;
+      scale = Math.max(0.5, Math.min(3.0, v / 100));
+      savePos(); render();
+    }
+    zoomSlider.addEventListener('input', (e) => setScaleFromSlider(parseInt(e.target.value,10)));
+    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setScaleFromSlider(parseInt(zoomSlider.value,10)); });
+    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(70, parseInt(zoomSlider.value,10) - 10); setScaleFromSlider(parseInt(zoomSlider.value,10)); });
+    fitBtn.addEventListener('click', () => { fitWidth = true; savePos(); render(); });
 
-    // Topbar & modal
-    menuBtn.addEventListener('click', ()=> drawer.classList.toggle('open'));
-    aaBtn.addEventListener('click', ()=> document.body.classList.toggle('chrome-visible'));
-    tocBtn.addEventListener('click', ()=> drawer.classList.add('open'));
-    closeModal.addEventListener('click', ()=>{ closeMenu(); document.body.classList.remove('chrome-visible'); });
+    // Topbar buttons
+    menuBtn.addEventListener('click', () => { drawer.classList.toggle('open'); });
+    aaBtn.addEventListener('click', () => { toggleChrome(); }); // acts as quick chrome toggle
 
-    // Go to page
-    gotoBtn.addEventListener('click', ()=>{ const p=parseInt(gotoInput.value||'0',10); if(!isNaN(p)&&p>=1&&p<=totalPages){ pageNum=p; savePos(); render(true); closeMenu(); document.body.classList.remove('chrome-visible'); } });
+    // Orientation / resize reflow
+    window.addEventListener('resize', () => { render(); });
 
-    // Search
-    let searchResults=[], searchIndex=-1, textCache={};
-    async function getPageText(n){ if(textCache[n]) return textCache[n]; const pg=await pdfDoc.getPage(n); const c=await pg.getTextContent(); const s=c.items.map(it=>it.str).join(' '); textCache[n]=s; return s; }
-    async function buildSearch(q){ searchResults=[]; searchIndex=-1; if(!q){ searchCount.textContent='0 совпадений'; return; } const needle=q.toLowerCase();
-      for(let i=1;i<=totalPages;i++){ const txt=(await getPageText(i)).toLowerCase(); if(txt.includes(needle)) searchResults.push(i); }
-      searchCount.textContent=searchResults.length+' совпадений'; if(searchResults.length){ const near=searchResults.reduce((best,p)=>{ const d=Math.abs(p-pageNum); return (best==null||d<Math.abs(best-pageNum))?p:best; }, null); searchIndex=searchResults.indexOf(near); pageNum=near; savePos(); render(true); } }
-    function gotoSearch(off){ if(!searchResults.length) return; searchIndex=(searchIndex+off+searchResults.length)%searchResults.length; pageNum=searchResults[searchIndex]; savePos(); render(true); }
-    searchBtn.addEventListener('click', ()=>buildSearch(searchInput.value.trim())); searchNext.addEventListener('click', ()=>gotoSearch(+1)); searchPrev.addEventListener('click', ()=>gotoSearch(-1));
-
-    // Bottom zoom
-    function setScaleFromSlider(v){ userScale=Math.max(0.7, Math.min(3.0, v/100)); localStorage.setItem('mUserScale', String(Math.round(userScale*100))); render(false); }
-    zoomSlider.addEventListener('input', e=> setScaleFromSlider(parseInt(e.target.value,10)));
-    zoomInBtn.addEventListener('click', ()=> setScaleFromSlider(Math.min(300, parseInt(zoomSlider.value,10)+10)));
-    zoomOutBtn.addEventListener('click', ()=> setScaleFromSlider(Math.max(70, parseInt(zoomSlider.value,10)-10)));
-    fitBtn.addEventListener('click', ()=>{ userScale=1; panX=0; panY=0; zoomSlider.value='100'; savePos(); render(true); });
-
-    window.addEventListener('resize', ()=> render(false));
+    // Close drawer on outside swipe from left
+    let drawerStartX = null;
+    drawer.addEventListener('touchstart', (e) => { if (e.touches.length===1) drawerStartX = e.touches[0].clientX; }, {passive:true});
+    drawer.addEventListener('touchend', (e) => {
+      if (drawerStartX==null) return;
+      const dx = e.changedTouches[0].clientX - drawerStartX;
+      if (dx > 70) closeDrawer();
+      drawerStartX = null;
+    }, {passive:true});
   </script>
 </body>
 </html>
