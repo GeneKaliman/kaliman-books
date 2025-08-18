@@ -157,8 +157,8 @@
     }).catch(err=>showError('Ошибка загрузки PDF: '+err.message));
 
     function computeBaseScale(page){ const targetW=Math.min(window.innerWidth, document.documentElement.clientWidth); const vp1=page.getViewport({scale:1}); originalPageWidth=vp1.width; return targetW/originalPageWidth; }
-    function applyPanClamp(){ const wr=pageWrap.getBoundingClientRect(), sr=stage.getBoundingClientRect(); const overX=Math.max(0,(wr.width-sr.width)/2), overY=Math.max(0,(wr.height-sr.height)/2); panX=Math.max(-overX-60, Math.min(overX+60, panX)); panY=Math.max(-overY-60, Math.min(overY+60, panY)); }
-    function applyTransform(){ pageWrap.style.transform=`translate(calc(50% + ${panX}px), calc(50% + ${panY}px)) translate(-50%,-50%) scale(${userScale})`; }
+    function applyPanClamp(){ const cw=parseFloat(canvas.style.width)||canvas.width, ch=parseFloat(canvas.style.height)||canvas.height; const sr=stage.getBoundingClientRect(); const overX=Math.max(0,(cw - sr.width)/2), overY=Math.max(0,(ch - sr.height)/2); panX=Math.max(-overX-60, Math.min(overX+60, panX)); panY=Math.max(-overY-60, Math.min(overY+60, panY)); }
+    function applyTransform(){ pageWrap.style.transform=`translate(calc(50% + ${panX}px), calc(50% + ${panY}px)) translate(-50%,-50%)`; }
 
     let rerenderScheduled=null;
     function scheduleHiDpiRerender(){ if(rerenderScheduled) cancelAnimationFrame(rerenderScheduled); rerenderScheduled=requestAnimationFrame(()=>render(false)); }
