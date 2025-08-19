@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Браузерный ридер — История климата (скролл)</title>
+  <style>
+    :root {
+      --bg: #0b0b0c;
+      --pagebg: #ffffff;
+      --fg: #e7e7ea;
+      --muted: #9aa0a6;
+      --accent: #8ab4f8;
+      --bar: rgba(0,0,0,0.7);
+      --bar-blur: blur(6px);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+      overscroll-behavior: none;
+    }
+
+    /* Top / bottom chrome */
+    .topbar, .bottombar {
+      position: fixed; left: 0; right: 0; z-index: 50;
+      display: flex; align-items: center; gap: 12px;
+      padding: env(safe-area-inset-top) 12px 12px 12px;
+      backdrop-filter: var(--bar-blur);
+      background: var(--bar);
+    }
+    .topbar { top: 0; }
+    .bottombar {
+      bottom: 0; top: auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)) 12px;
+      justify-content: space-between;
+    }
+
+    .btn {
+      appearance: none; border: 0; border-radius: 12px; padding: 8px 12px;
+      background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px;
+    }
+    .btn:active { background: rgba(255,255,255,0.1); }
+    .icon { font-size: 20px; line-height: 1; }
+    .meta { font-size: 13px; color: var(--muted); }
+    .spacer { flex: 1; }
+
+    /* Scrolling pages */
+    .pages {
+      position: relative;
+      width: 100%;
+      max-width: min(100vw, 1200px);
+      margin: 0 auto;
+      padding-top: calc(48px + env(safe-area-inset-top));
+      padding-bottom: calc(70px + env(safe-area-inset-bottom));
+    }
+    .page {
+      display: grid; place-items: center;
+      margin: 16px auto;
+      width: 100%;
+      perspective: 1000px;
+    }
+    .page canvas {
+      display: block;
+      background: var(--pagebg);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      width: 100%; /* updated at runtime for exact width */
+      height: auto; /* exact height set via style for layout before render */
+    }
+    .page .pnum {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    /* Drawer (TOC) */
+    .drawer {
+      position: fixed; top: 0; bottom: 0; right: 0; width: min(88vw, 380px); z-index: 60;
+      background: #121316; border-left: 1px solid #202124; transform: translateX(100%);
+      transition: transform .25s ease;
+      display: flex; flex-direction: column;
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer header { padding: 16px; border-bottom: 1px solid #202124; font-weight: 600; }
+    .drawer .toc { flex: 1; overflow: auto; padding: 6px 8px 16px 8px; }
+    .toc button {
+      width: 100%; text-align: left; padding: 10px 12px; margin: 6px 4px;
+      background: transparent; color: var(--fg); border: 1px solid #202124; border-radius: 10px;
+      font-size: 15px;
+    }
+    .toc button:active { background: rgba(255,255,255,0.06); }
+
+    .zoom-pack { display: flex; align-items: center; gap: 8px; }
+    input[type="range"] { width: 160px; }
+
+    /* Progress line */
+    .progress {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      height: 3px; background: rgba(255,255,255,0.08); z-index: 55;
+      transform: translateY(-3px);
+    }
+    .progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s ease; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <button id="menuBtn" class="btn"><span class="icon">☰</span> Меню</button>
+    <div class="meta" id="pageMeta">Стр. — / —</div>
+    <div class="spacer"></div>
+    <button id="aaBtn" class="btn">Aa</button>
+  </div>
+
+  <div class="bottombar">
+    <div class="zoom-pack">
+      <button id="zoomOut" class="btn">−</button>
+      <input id="zoomSlider" type="range" min="70" max="220" value="100" step="5">
+      <button id="zoomIn" class="btn">+</button>
+    </div>
+    <button id="fitBtn" class="btn">Подогнать ширину</button>
+  </div>
+
+  <div class="pages" id="pages"></div>
+  <div class="progress"><span id="progressBar"></span></div>
+
+  <!-- TOC Drawer -->
+  <aside class="drawer" id="drawer">
+    <header>
+      Содержание
+      <div class="meta">Коснитесь главы для перехода</div>
+    </header>
+    <div class="toc" id="tocList"></div>
+  </aside>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
+
+    const PDF_URL = 'History_Climate.pdf'; // тот же источник (страничные номера — как в PDF)
+    const pagesEl = document.getElementById('pages');
+    const pageMeta = document.getElementById('pageMeta');
+    const progressBar = document.getElementById('progressBar');
+    const menuBtn = document.getElementById('menuBtn');
+    const drawer = document.getElementById('drawer');
+    const tocList = document.getElementById('tocList');
+    const aaBtn = document.getElementById('aaBtn');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomInBtn = document.getElementById('zoomIn');
+    const zoomOutBtn = document.getElementById('zoomOut');
+    const fitBtn = document.getElementById('fitBtn');
+
+    let pdfDoc = null, totalPages = 0;
+    let scale = parseFloat(localStorage.getItem('bScale') || '1.0');
+    let fitWidth = JSON.parse(localStorage.getItem('bFitWidth') || 'true');
+    let originalPageWidth = null;
+    let dpr = window.devicePixelRatio || 1;
+
+    const tocEntries = [
+      { title: 'Введение', page: 2 },
+      { title: 'Глава 1. Климат и история', page: 4 },
+      { title: 'Глава 2. Эти таинственные шумеры', page: 36 },
+      { title: 'Глава 3. Убейдцы и шумеры', page: 70 },
+      { title: 'Глава 4. Конец периода Джемдет-Наср.', page: 109 },
+      { title: 'Глава 5. Войны номов', page: 131 },
+      { title: 'Глава 6. Расцвет и гибель Аккадского царства', page: 149 },
+      { title: 'Глава 7. Возвышение Ура и появление амореев', page: 165 },
+      { title: 'Глава 8. Ближний Восток в ХVI-ХIV веках до н. э.', page: 192 },
+      { title: 'Глава 9. Коллапс бронзового века', page: 217 },
+      { title: 'Глава 10. Современные изменения климата', page: 253 }
+    ];
+
+    // Build TOC
+    tocEntries.forEach(ent => {
+      const b = document.createElement('button');
+      b.textContent = ent.title;
+      b.addEventListener('click', () => {
+        const target = document.querySelector('[data-page="' + ent.page + '"]');
+        if (target) target.scrollIntoView({behavior:'smooth', block:'start'});
+        closeDrawer();
+      });
+      tocList.appendChild(b);
+    });
+
+    function openDrawer() { drawer.classList.add('open'); }
+    function closeDrawer() { drawer.classList.remove('open'); }
+    menuBtn.addEventListener('click', () => drawer.classList.toggle('open'));
+    aaBtn.addEventListener('click', () => window.scrollTo({top: 0, behavior: 'smooth'})); // быстрый подъём наверх
+
+    // Load PDF
+    pdfjsLib.getDocument(PDF_URL).promise.then(pdf => {
+      pdfDoc = pdf; totalPages = pdf.numPages;
+      // Create empty page shells first to allow smooth scroll + correct progress
+      for (let i = 1; i <= totalPages; i++) {
+        const holder = document.createElement('div');
+        holder.className = 'page';
+        holder.dataset.page = String(i);
+
+        const canvas = document.createElement('canvas');
+        canvas.id = 'p' + i;
+        canvas.style.width = '100%';
+        // placeholder height for better scroll position before render
+        canvas.style.height = '130vw'; // will be corrected at render
+
+        const caption = document.createElement('div');
+        caption.className = 'pnum';
+        caption.textContent = 'Страница ' + i;
+
+        holder.appendChild(canvas);
+        holder.appendChild(caption);
+        pagesEl.appendChild(holder);
+      }
+
+      observeAndRender();
+      updateProgress();
+      updateMetaFromViewport();
+    }).catch(err => console.error('PDF load error:', err));
+
+    // IntersectionObserver to lazy-render pages as they enter viewport
+    let io = null;
+    function observeAndRender() {
+      if (io) io.disconnect();
+      io = new IntersectionObserver(async (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const pageIndex = parseInt(entry.target.dataset.page, 10);
+          const canvas = entry.target.querySelector('canvas');
+          if (canvas.dataset.rendered === '1') continue;
+          await renderPage(pageIndex, canvas);
+        }
+      }, { root: null, rootMargin: '1200px 0px', threshold: 0.01 });
+
+      document.querySelectorAll('.page').forEach(p => io.observe(p));
+    }
+
+    async function renderPage(pageNum, canvas) {
+      const page = await pdfDoc.getPage(pageNum);
+      if (!originalPageWidth) {
+        originalPageWidth = page.getViewport({ scale: 1 }).width;
+      }
+      // calculate scale
+      let s = scale;
+      if (fitWidth) {
+        const targetW = Math.min(window.innerWidth, document.documentElement.clientWidth);
+        s = targetW / originalPageWidth;
+      }
+      const viewport = page.getViewport({ scale: s });
+      // set canvas sizes
+      const outW = Math.floor(viewport.width * dpr);
+      const outH = Math.floor(viewport.height * dpr);
+      canvas.width = outW; canvas.height = outH;
+      canvas.style.width = Math.floor(viewport.width) + 'px';
+      canvas.style.height = Math.floor(viewport.height) + 'px';
+      const ctx = canvas.getContext('2d');
+      const rc = { canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null };
+      await page.render(rc).promise;
+      canvas.dataset.rendered = '1';
+      // after first real render, ensure progress/meta are correct
+      updateProgress();
+      updateMetaFromViewport();
+    }
+
+    // Zoom controls
+    function setScaleFromSlider(v) {
+      fitWidth = false;
+      scale = Math.max(0.5, Math.min(3.0, v / 100));
+      localStorage.setItem('bScale', String(scale));
+      localStorage.setItem('bFitWidth', JSON.stringify(fitWidth));
+      rerenderVisible();
+    }
+    zoomSlider.addEventListener('input', (e) => setScaleFromSlider(parseInt(e.target.value,10)));
+    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setScaleFromSlider(parseInt(zoomSlider.value,10)); });
+    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(70, parseInt(zoomSlider.value,10) - 10); setScaleFromSlider(parseInt(zoomSlider.value,10)); });
+    fitBtn.addEventListener('click', () => {
+      fitWidth = true;
+      localStorage.setItem('bFitWidth', JSON.stringify(fitWidth));
+      rerenderVisible(true);
+    });
+
+    function rerenderVisible(forceAll=false) {
+      // re-render only pages in/near viewport for speed
+      const pages = document.querySelectorAll('.page');
+      const vh = window.innerHeight;
+      pages.forEach(p => {
+        const rect = p.getBoundingClientRect();
+        const near = rect.top < vh*2 && rect.bottom > -vh*1;
+        if (near || forceAll) {
+          const pageNum = parseInt(p.dataset.page, 10);
+          const canvas = p.querySelector('canvas');
+          canvas.dataset.rendered = '0'; // mark dirty
+          renderPage(pageNum, canvas);
+        }
+      });
+    }
+
+    // Progress & meta (current page in view)
+    function updateProgress() {
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      const full = document.documentElement.scrollHeight - window.innerHeight;
+      const percent = full > 0 ? Math.max(0, Math.min(100, Math.round(scrollY / full * 100))) : 0;
+      progressBar.style.width = percent + '%';
+    }
+
+    function updateMetaFromViewport() {
+      // choose the page whose top is closest to viewport top but not below mid
+      const pages = document.querySelectorAll('.page');
+      let bestPage = 1, bestDist = Infinity;
+      const viewportTop = 0;
+      pages.forEach(p => {
+        const r = p.getBoundingClientRect();
+        const dist = Math.abs(r.top - viewportTop);
+        if (dist < bestDist) { bestDist = dist; bestPage = parseInt(p.dataset.page, 10); }
+      });
+      pageMeta.textContent = 'Стр. ' + bestPage + ' / ' + totalPages;
+    }
+
+    window.addEventListener('scroll', () => { updateProgress(); updateMetaFromViewport(); }, {passive:true});
+    window.addEventListener('resize', () => { dpr = window.devicePixelRatio || 1; rerenderVisible(true); });
+
+    // Close drawer on outside swipe from left (inside drawer)
+    let drawerStartX = null;
+    drawer.addEventListener('touchstart', (e) => { if (e.touches.length===1) drawerStartX = e.touches[0].clientX; }, {passive:true});
+    drawer.addEventListener('touchend', (e) => {
+      if (drawerStartX==null) return;
+      const dx = e.changedTouches[0].clientX - drawerStartX;
+      if (dx > 70) closeDrawer();
+      drawerStartX = null;
+    }, {passive:true});
+  </script>
+</body>
+</html>
