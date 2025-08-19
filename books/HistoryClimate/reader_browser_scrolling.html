@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Браузерный ридер — История климата (скролл, v9)</title>
+  <title>Браузерный ридер — История климата (статический, авто‑подгон)</title>
   <style>
     :root {
       --bg: #0b0b0c;
@@ -19,23 +19,23 @@
     html, body { height: 100%; overflow-x: hidden; }
     body { margin: 0; background: var(--bg); color: var(--fg);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
-    .topbar, .bottombar {
-      position: fixed; left: 0; right: 0; z-index: 1000;
+    .topbar {
+      position: fixed; left: 0; right: 0; top: 0; z-index: 1000;
       display: flex; align-items: center; gap: 12px;
       padding: env(safe-area-inset-top) 12px 12px 12px;
       backdrop-filter: var(--bar-blur); background: var(--bar);
     }
-    .topbar { top: 0; }
-    .bottombar { bottom: 0; top: auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)) 12px; justify-content: space-between; }
     .btn { border: 0; border-radius: 12px; padding: 8px 12px; background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px; cursor: pointer; }
     .btn:active { background: rgba(255,255,255,0.1); }
     .meta { font-size: 13px; color: var(--muted); } .spacer { flex: 1; }
+
     .pages { position: relative; width: 100%; max-width: 1200px; margin: 0 auto;
-      padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+      padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: 24px; }
     .page { display: grid; place-items: center; margin: 12px auto; width: 100%; position: relative; }
     .sheet { width: var(--pageW); }
     .sheet canvas { display: block; background: var(--pagebg); box-shadow: 0 6px 26px rgba(0,0,0,0.36); }
     .pnum { margin-top: 6px; font-size: 12px; color: var(--muted); user-select: none; }
+
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1200; opacity: 0; pointer-events: none; transition: opacity .2s; }
     .overlay.show { opacity: 1; pointer-events: auto; }
     .drawer { position: fixed; top: 0; bottom: 0; right: 0; width: min(88vw, 380px);
@@ -45,38 +45,9 @@
     .drawer .toc { flex: 1; overflow: auto; padding: 6px 8px 16px 8px; }
     .toc button { width: 100%; text-align: left; padding: 10px 12px; margin: 6px 4px; background: transparent; color: var(--fg);
       border: 1px solid #202124; border-radius: 10px; font-size: 15px; cursor: pointer; }
+
     .progress { position: fixed; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,0.08); z-index: 900; transform: translateY(-3px); }
     .progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
-    .dbg { position: absolute; top: 4px; left: 4px; font-size: 10px; background: rgba(0,0,0,0.55); padding: 4px 6px; border-radius: 6px; display: none; }
-    .page.showdbg .dbg { display: block; }
-
-    /* Bigger, smoother slider that "waits" */
-    .zoom-pack { display: flex; align-items: center; gap: 10px; }
-    input[type="range"] {
-      width: clamp(260px, 42vw, 520px);
-      height: 6px;
-      background: transparent;
-      -webkit-appearance: none;
-      appearance: none;
-      cursor: pointer;
-      touch-action: none;
-    }
-    input[type="range"]::-webkit-slider-runnable-track {
-      height: 6px; background: rgba(255,255,255,0.25); border-radius: 3px;
-    }
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none; appearance: none;
-      width: 18px; height: 18px; border-radius: 50%;
-      background: var(--accent); margin-top: -6px;
-      box-shadow: 0 0 0 3px rgba(0,0,0,0.2);
-    }
-    input[type="range"]::-moz-range-track {
-      height: 6px; background: rgba(255,255,255,0.25); border-radius: 3px;
-    }
-    input[type="range"]::-moz-range-thumb {
-      width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--accent);
-      box-shadow: 0 0 0 3px rgba(0,0,0,0.2);
-    }
   </style>
 </head>
 <body>
@@ -84,16 +55,8 @@
     <button id="menuBtn" class="btn">☰ Меню</button>
     <div class="meta" id="pageMeta">Стр. — / —</div>
     <div class="spacer"></div>
-    <div class="meta" id="zoomMeta">100%</div>
-    <button id="dbgBtn" class="btn" title="Показать отладку">D</button>
   </div>
-  <div class="bottombar">
-    <div class="zoom-pack">
-      <button id="zoomOut" class="btn">−</button>
-      <input id="zoomSlider" type="range" min="60" max="220" value="100" step="1">
-      <button id="zoomIn" class="btn">+</button>
-    </div>
-  </div>
+
   <div class="pages" id="pages"></div>
   <div class="progress"><span id="progressBar"></span></div>
   <div class="overlay" id="overlay"></div>
@@ -116,22 +79,13 @@
     const drawer = document.getElementById('drawer');
     const overlay = document.getElementById('overlay');
     const tocList = document.getElementById('tocList');
-    const zoomSlider = document.getElementById('zoomSlider');
-    const zoomInBtn = document.getElementById('zoomIn');
-    const zoomOutBtn = document.getElementById('zoomOut');
-    const zoomMeta = document.getElementById('zoomMeta');
-    const dbgBtn = document.getElementById('dbgBtn');
 
     let pdfDoc = null, totalPages = 0;
     let dpr = window.devicePixelRatio || 1;
-    let userScale = 1.0; // 100% = baseline viewport width
-    let baselineW = 960;  // captured at load; updated only if viewport width changes significantly
     let pageMetaCache = {}; // pageNum -> {w,h,page}
     let renderTasks = {};   // pageNum -> renderTask
     let resizeTimer = null;
-    let isSliding = false;
-    let idleZoomTimer = null;
-    let showDebug = false;
+    let baselineW = 960;
 
     const tocEntries = [
       { title: 'Введение', page: 2 },
@@ -146,53 +100,45 @@
       { title: 'Глава 9. Коллапс бронзового века', page: 217 },
       { title: 'Глава 10. Современные изменения климата', page: 253 }
     ];
-
     tocEntries.forEach(ent => {
       const b = document.createElement('button'); b.textContent = ent.title;
       b.addEventListener('click', () => { const t = document.querySelector('[data-page="' + ent.page + '"]'); if (t) t.scrollIntoView({behavior:'smooth', block:'start'}); closeDrawer(); });
       tocList.appendChild(b);
     });
 
-    function getVVWidth() {
-      return Math.floor((window.visualViewport && window.visualViewport.width) || document.documentElement.clientWidth);
-    }
-
-    function applyPageWidth() {
-      const cssW = Math.round(baselineW * userScale);
-      document.documentElement.style.setProperty('--pageW', cssW + 'px');
-      // Update skeleton heights if we already know metas
-      document.querySelectorAll('.page').forEach(p => {
-        const pageNum = parseInt(p.dataset.page, 10);
-        const meta = pageMetaCache[pageNum];
-        if (!meta) return;
-        const h = Math.round(cssW * (meta.h / meta.w));
-        const sheet = p.querySelector('.sheet');
-        if (sheet) sheet.style.height = h + 'px';
-      });
-      return cssW;
-    }
-
-    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); setTimeout(() => rerenderVisible(false), 80); }
-    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); setTimeout(() => rerenderVisible(false), 80); }
+    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); }
+    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); }
     menuBtn.addEventListener('click', () => (drawer.classList.contains('open') ? closeDrawer() : openDrawer()));
     overlay.addEventListener('click', closeDrawer);
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 
-    dbgBtn.addEventListener('click', () => {
-      showDebug = !showDebug;
-      document.querySelectorAll('.page').forEach(p => p.classList.toggle('showdbg', showDebug));
-    });
+    function getVVWidth() {
+      return Math.floor((window.visualViewport && window.visualViewport.width) || document.documentElement.clientWidth);
+    }
+    function setPageWidth(w) {
+      baselineW = Math.round(w);
+      document.documentElement.style.setProperty('--pageW', baselineW + 'px');
+      // update skeletons if metas known
+      for (let i = 1; i <= totalPages; i++) {
+        const meta = pageMetaCache[i];
+        if (!meta) continue;
+        const sheet = document.querySelector('[data-page="'+i+'"] .sheet');
+        if (sheet) sheet.style.height = Math.round(baselineW * (meta.h / meta.w)) + 'px';
+      }
+    }
+
+    // One-time width (fit viewport), then only on orientation/large change
+    function snapshotWidth() {
+      const vw = getVVWidth();
+      setPageWidth(Math.min(1200, Math.max(360, vw * 0.92)));
+    }
+    snapshotWidth();
 
     pdfjsLib.getDocument(PDF_URL).promise.then(async pdf => {
       pdfDoc = pdf; totalPages = pdf.numPages;
 
-      // Capture baseline based on initial viewport width
-      baselineW = Math.min(1200, Math.max(320, getVVWidth()));
-      applyPageWidth();
-
       for (let i = 1; i <= totalPages; i++) {
         const holder = document.createElement('div'); holder.className = 'page'; holder.dataset.page = String(i);
-        const dbg = document.createElement('div'); dbg.className = 'dbg'; dbg.id = 'dbg'+i; holder.appendChild(dbg);
         const sheet = document.createElement('div'); sheet.className = 'sheet';
         const canvas = document.createElement('canvas'); canvas.id = 'p' + i; sheet.appendChild(canvas);
         holder.appendChild(sheet);
@@ -200,23 +146,17 @@
         pagesEl.appendChild(holder);
       }
 
-      // Preflight metas to set skeleton heights so late pages (e.g., Chapter 10) have space and render reliably.
-      preflightMetas();
-
+      await preflightMetas(); // set skeleton heights
       observeAndRender();
       updateProgress(); updateMetaFromViewport();
     }).catch(err => console.error('PDF load error:', err));
 
-    // Pre-compute page metas progressively and set skeleton heights
     async function preflightMetas() {
-      const cssW = Math.round(baselineW * userScale);
-      for (let i = 1; i <= totalPages; i++) {
+      for (let i = 1; i <= (pdfDoc ? pdfDoc.numPages : 0); i++) {
         if (!pageMetaCache[i]) {
           const meta = await ensurePageMeta(i);
-          const h = Math.round(cssW * (meta.h / meta.w));
           const sheet = document.querySelector('[data-page="'+i+'"] .sheet');
-          if (sheet) sheet.style.height = h + 'px';
-          // Allow UI to breathe
+          if (sheet) sheet.style.height = Math.round(baselineW * (meta.h / meta.w)) + 'px';
           await new Promise(r => setTimeout(r, 0));
         }
       }
@@ -233,7 +173,7 @@
           if (canvas.dataset.rendered === '1' || canvas.dataset.rendering === '1') continue;
           await renderPage(pageIndex, canvas);
         }
-      }, { root: null, rootMargin: '2000px 0px', threshold: 0.01 });
+      }, { root: null, rootMargin: '1800px 0px', threshold: 0.01 });
       document.querySelectorAll('.page').forEach(p => io.observe(p));
     }
 
@@ -248,12 +188,11 @@
 
     async function renderPage(pageNum, canvas) {
       const meta = await ensurePageMeta(pageNum);
-      const cssW = Math.round(baselineW * userScale);
+      const cssW = baselineW;
       const cssH = Math.round(cssW * (meta.h / meta.w));
       const pxW = Math.floor(cssW * dpr);
       const pxH = Math.floor(cssH * dpr);
 
-      // Cancel any in-flight render before starting a new one
       if (renderTasks[pageNum]) { try { renderTasks[pageNum].cancel(); } catch(e) {} }
 
       if (canvas.width !== pxW || canvas.height !== pxH) { canvas.width = pxW; canvas.height = pxH; }
@@ -267,29 +206,20 @@
       const task = meta.page.render({ canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null });
       renderTasks[pageNum] = task;
 
-      try {
-        await task.promise;
-        canvas.dataset.rendered = '1';
-      } catch (e) {
-        console.warn('Render error on page', pageNum, e && e.message);
-      } finally {
-        canvas.dataset.rendering = '0';
-        if (renderTasks[pageNum] === task) delete renderTasks[pageNum];
-      }
-
-      const dbg = document.getElementById('dbg'+pageNum);
-      if (dbg) dbg.textContent = `p${pageNum} meta:${Math.round(meta.w)}×${Math.round(meta.h)} css:${cssW}×${cssH} dpr:${dpr}`;
+      try { await task.promise; canvas.dataset.rendered = '1'; }
+      catch(e){ console.warn('Render error p'+pageNum, e && e.message); }
+      finally { canvas.dataset.rendering = '0'; if (renderTasks[pageNum] === task) delete renderTasks[pageNum]; }
 
       updateProgress(); updateMetaFromViewport();
     }
 
-    function rerenderVisible(forceAll=false) {
+    function rerenderVisible() {
       const pages = document.querySelectorAll('.page');
       const vh = window.innerHeight;
       pages.forEach(p => {
         const r = p.getBoundingClientRect();
         const near = r.top < vh*2 && r.bottom > -vh*1;
-        if (near || forceAll) {
+        if (near) {
           const pageNum = parseInt(p.dataset.page, 10);
           const canvas = p.querySelector('canvas');
           canvas.dataset.rendered = '0';
@@ -298,52 +228,29 @@
       });
     }
 
-    // Zoom handling — "wait" behavior
-    function commitZoom() {
-      applyPageWidth();
-      rerenderVisible(true);
-    }
-
-    function setUserScaleFromSlider(v) {
-      userScale = Math.max(0.6, Math.min(2.2, v / 100));
-      zoomMeta.textContent = Math.round(userScale * 100) + '%';
-      // Update skeleton sizes immediately so layout looks right while sliding,
-      // but delay heavy re-render until user stops moving.
-      applyPageWidth();
-      clearTimeout(idleZoomTimer);
-      idleZoomTimer = setTimeout(() => { if (!isSliding) commitZoom(); }, 300);
-    }
-
-    // Pointer-aware controls so we only commit on release
-    zoomSlider.addEventListener('pointerdown', () => { isSliding = true; });
-    zoomSlider.addEventListener('pointerup', () => { isSliding = false; commitZoom(); });
-    zoomSlider.addEventListener('pointercancel', () => { isSliding = false; commitZoom(); });
-    zoomSlider.addEventListener('change', (e) => { setUserScaleFromSlider(parseInt(e.target.value,10)); commitZoom(); });
-    zoomSlider.addEventListener('input', (e) => setUserScaleFromSlider(parseInt(e.target.value,10)));
-
-    zoomInBtn.addEventListener('click', () => { const v = Math.min(220, parseInt(zoomSlider.value,10) + 5); zoomSlider.value = v; setUserScaleFromSlider(v); commitZoom(); });
-    zoomOutBtn.addEventListener('click', () => { const v = Math.max(60, parseInt(zoomSlider.value,10) - 5); zoomSlider.value = v; setUserScaleFromSlider(v); commitZoom(); });
-
-    // Only recompute baseline width when viewport width changes by a lot
-    let lastVVW = getVVWidth();
-    function handleViewportResize() {
+    // Recompute width on orientation change / large viewport change
+    function onViewportResize() {
       const now = getVVWidth();
-      if (Math.abs(now - lastVVW) < 120) return; // ignore tiny changes from scrollbars
-      lastVVW = now;
-      baselineW = Math.min(1200, Math.max(320, now));
-      commitZoom();
+      const diff = Math.abs(now - baselineW);
+      // Only react if the change is significant (rotation or manual resize)
+      if (diff > 120) {
+        setPageWidth(Math.min(1200, Math.max(360, now * 0.92)));
+        rerenderVisible();
+      }
     }
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(handleViewportResize, 120);
+        clearTimeout(resizeTimer); resizeTimer = setTimeout(onViewportResize, 160);
       });
     } else {
       window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(handleViewportResize, 120);
+        clearTimeout(resizeTimer); resizeTimer = setTimeout(onViewportResize, 160);
       });
     }
+    window.addEventListener('orientationchange', () => {
+      // Give the browser time to reflow after rotation
+      setTimeout(onViewportResize, 250);
+    });
 
     function updateProgress() {
       const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
@@ -354,10 +261,9 @@
     function updateMetaFromViewport() {
       const pages = document.querySelectorAll('.page');
       let bestPage = 1, bestDist = Infinity;
-      const viewportTop = 0;
       pages.forEach(p => {
         const r = p.getBoundingClientRect();
-        const dist = Math.abs(r.top - viewportTop);
+        const dist = Math.abs(r.top - 0);
         if (dist < bestDist) { bestDist = dist; bestPage = parseInt(p.dataset.page, 10); }
       });
       pageMetaEl.textContent = 'Стр. ' + bestPage + ' / ' + totalPages;
