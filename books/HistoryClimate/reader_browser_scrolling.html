@@ -48,6 +48,37 @@
 
     .progress { position: fixed; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,0.08); z-index: 900; transform: translateY(-3px); }
     .progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+    /* Loading spinner overlay shown while the PDF is being prepared. It covers the entire viewport
+       and prevents interaction until at least the first page is rendered. */
+    #spinner {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      background: rgba(0,0,0,0.5);
+      color: var(--fg);
+      font-size: 16px;
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+    #spinner.hidden { opacity: 0; pointer-events: none; display: none; }
+    #spinner .icon {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(255,255,255,0.4);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 12px;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -65,6 +96,12 @@
     <div class="toc" id="tocList"></div>
   </aside>
 
+    <!-- Spinner overlay displayed while waiting for the PDF to load/render -->
+    <div id="spinner">
+      <div class="icon"></div>
+      <div>Пожалуйста, подождите…</div>
+    </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js"></script>
   <script>
@@ -79,6 +116,7 @@
     const drawer = document.getElementById('drawer');
     const overlay = document.getElementById('overlay');
     const tocList = document.getElementById('tocList');
+    const spinner = document.getElementById('spinner');
 
     let pdfDoc = null, totalPages = 0;
     let dprBase = window.devicePixelRatio || 1;
@@ -88,6 +126,9 @@
     let resizeTimer = null;
     let baselineW = 960;    // CSS width of a page (doesn't change during pinch)
     let lastVVW = 0, lastScale = vvScale;
+
+    // Default page aspect ratio (width/height) used to fit pages on screen before meta is available.
+    let pageAspect = 0.707;
 
     // --- Hard-coded TOC ---
     const tocEntries = [
@@ -119,6 +160,9 @@
     function getVVWidth() {
       return Math.floor((window.visualViewport && window.visualViewport.width) || document.documentElement.clientWidth);
     }
+    function getVVHeight() {
+      return Math.floor((window.visualViewport && window.visualViewport.height) || document.documentElement.clientHeight);
+    }
     function setPageWidth(w) {
       baselineW = Math.round(w);
       document.documentElement.style.setProperty('--pageW', baselineW + 'px');
@@ -131,11 +175,32 @@
       }
     }
 
+    // Compute the optimal page width so that pages fit within both the horizontal and vertical
+    // dimensions of the viewport. This prevents pages from being cropped when the device is
+    // in landscape orientation. Uses the aspect ratio of the first page if available.
+    function computeFitWidth() {
+      const vw = getVVWidth();
+      const vh = getVVHeight();
+      // Height available for the page: subtract top bar and some bottom margin (progress bar, safe area)
+      const topbarEl = document.querySelector('.topbar');
+      const topBarH = topbarEl ? topbarEl.offsetHeight : 0;
+      const bottomMargin = 80; // enough space for progress bar and OS nav bars
+      const availH = Math.max(0, vh - topBarH - bottomMargin);
+      // Maximum width based on height and page aspect ratio
+      const maxWByHeight = availH * pageAspect;
+      // Desired width by viewport width
+      const widthByViewport = vw * 0.92;
+      // Compute width, clamped to reasonable bounds
+      const w = Math.min(1200, Math.max(360, Math.min(widthByViewport, maxWByHeight)));
+      return w;
+    }
+
     // One-time width (fit viewport), then only on rotation / large viewport changes
     function snapshotWidth() {
-      const vw = getVVWidth();
-      lastVVW = vw;
-      setPageWidth(Math.min(1200, Math.max(360, vw * 0.92)));
+      // When the document loads, choose a width that fits both the width and height constraints
+      const w = computeFitWidth();
+      lastVVW = getVVWidth();
+      setPageWidth(w);
     }
     snapshotWidth();
 
@@ -156,6 +221,16 @@
       await preflightMetas(); // set skeleton heights
       observeAndRender();
       updateProgress(); updateMetaFromViewport();
+      // After the DOM is ready and before rendering pages, update the aspect ratio using
+      // the first page meta so landscape fitting uses correct proportions
+      if (pageMetaCache[1]) {
+        const meta = pageMetaCache[1];
+        if (meta && meta.h && meta.w) {
+          pageAspect = meta.w / meta.h;
+        }
+      }
+      // Recompute width with the new aspect if necessary
+      setPageWidth(computeFitWidth());
     }).catch(err => console.error('PDF load error:', err));
 
     async function preflightMetas() {
@@ -190,6 +265,10 @@
       const vp = page.getViewport({ scale: 1 });
       const meta = { w: vp.width, h: vp.height, page: page };
       pageMetaCache[pageNum] = meta;
+      // Update global aspect ratio when the first page meta is known
+      if (pageNum === 1) {
+        pageAspect = meta.w / meta.h;
+      }
       return meta;
     }
 
@@ -223,6 +302,11 @@
       catch(e){ console.warn('Render error p'+pageNum, e && e.message); }
       finally { canvas.dataset.rendering = '0'; if (renderTasks[pageNum] === task) delete renderTasks[pageNum]; }
 
+      // Hide the loading spinner once the first page has been rendered
+      if (pageNum === 1 && spinner && !spinner.classList.contains('hidden')) {
+        spinner.classList.add('hidden');
+      }
+
       updateProgress(); updateMetaFromViewport();
     }
 
@@ -255,7 +339,9 @@
 
       if (widthDelta > 120) {
         // Orientation or big chrome change — refit page width
-        setPageWidth(Math.min(1200, Math.max(360, nowW * 0.92)));
+        // Determine optimal width considering the current viewport height and page aspect ratio
+        const w = computeFitWidth();
+        setPageWidth(w);
         rerenderVisible();
       } else if (scaleDelta > 0.02) {
         // Pinch — rerender visible with new effective DPR
