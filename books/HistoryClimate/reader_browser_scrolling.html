@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Браузерный ридер — История климата (скролл, v5)</title>
+  <title>Браузерный ридер — История климата (скролл, v7)</title>
   <style>
     :root {
       --bg: #0b0b0c;
@@ -13,6 +13,7 @@
       --accent: #8ab4f8;
       --bar: rgba(0,0,0,0.7);
       --bar-blur: blur(6px);
+      --pageW: 960px; /* updated at runtime */
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; }
@@ -32,7 +33,8 @@
     .pages { position: relative; width: 100%; max-width: 1200px; margin: 0 auto;
       padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
     .page { display: grid; place-items: center; margin: 12px auto; width: 100%; position: relative; }
-    .page canvas { display: block; background: var(--pagebg); box-shadow: 0 6px 26px rgba(0,0,0,0.36); }
+    .sheet { width: var(--pageW); }
+    .sheet canvas { display: block; background: var(--pagebg); box-shadow: 0 6px 26px rgba(0,0,0,0.36); }
     .pnum { margin-top: 6px; font-size: 12px; color: var(--muted); user-select: none; }
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1200; opacity: 0; pointer-events: none; transition: opacity .2s; }
     .overlay.show { opacity: 1; pointer-events: auto; }
@@ -94,10 +96,12 @@
 
     let pdfDoc = null, totalPages = 0;
     let dpr = window.devicePixelRatio || 1;
-    let userScale = 1.0; // 100% = fit container width
-    let pageMetaCache = {}; // pageNum -> {w,h,rot,page}
+    let userScale = 1.0; // 100% = fit viewport (not container) width
+    let pageMetaCache = {}; // pageNum -> {w,h,page}
+    let renderTasks = {};   // pageNum -> renderTask
     let resizeTimer = null;
     let showDebug = false;
+    let targetCssW = 960;   // unified page width in CSS pixels
 
     const tocEntries = [
       { title: 'Введение', page: 2 },
@@ -119,8 +123,16 @@
       tocList.appendChild(b);
     });
 
-    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); }
-    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); }
+    function setTargetWidthAndRerender(forceAll=false) {
+      // base width from viewport, not affected by scrollbars
+      const base = Math.min(1200, Math.max(320, document.documentElement.clientWidth));
+      targetCssW = Math.round(base * userScale);
+      document.documentElement.style.setProperty('--pageW', targetCssW + 'px');
+      rerenderVisible(forceAll);
+    }
+
+    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); setTimeout(() => setTargetWidthAndRerender(false), 80); }
+    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); setTimeout(() => setTargetWidthAndRerender(false), 80); }
     menuBtn.addEventListener('click', () => (drawer.classList.contains('open') ? closeDrawer() : openDrawer()));
     overlay.addEventListener('click', closeDrawer);
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
@@ -130,19 +142,20 @@
       document.querySelectorAll('.page').forEach(p => p.classList.toggle('showdbg', showDebug));
     });
 
-    function containerWidth() { return Math.floor(pagesEl.getBoundingClientRect().width); }
-
     pdfjsLib.getDocument(PDF_URL).promise.then(async pdf => {
       pdfDoc = pdf; totalPages = pdf.numPages;
 
       for (let i = 1; i <= totalPages; i++) {
         const holder = document.createElement('div'); holder.className = 'page'; holder.dataset.page = String(i);
         const dbg = document.createElement('div'); dbg.className = 'dbg'; dbg.id = 'dbg'+i; holder.appendChild(dbg);
-        const canvas = document.createElement('canvas'); canvas.id = 'p' + i; holder.appendChild(canvas);
+        const sheet = document.createElement('div'); sheet.className = 'sheet';
+        const canvas = document.createElement('canvas'); canvas.id = 'p' + i; sheet.appendChild(canvas);
+        holder.appendChild(sheet);
         const caption = document.createElement('div'); caption.className = 'pnum'; caption.textContent = 'Страница ' + i; holder.appendChild(caption);
         pagesEl.appendChild(holder);
       }
 
+      setTargetWidthAndRerender(true);
       observeAndRender();
       updateProgress(); updateMetaFromViewport();
     }).catch(err => console.error('PDF load error:', err));
@@ -155,42 +168,55 @@
           if (!entry.isIntersecting) continue;
           const pageIndex = parseInt(entry.target.dataset.page, 10);
           const canvas = entry.target.querySelector('canvas');
-          if (canvas.dataset.rendered === '1') continue;
+          if (canvas.dataset.rendered === '1' || canvas.dataset.rendering === '1') continue;
           await renderPage(pageIndex, canvas);
         }
-      }, { root: null, rootMargin: '1600px 0px', threshold: 0.01 });
+      }, { root: null, rootMargin: '1400px 0px', threshold: 0.01 });
       document.querySelectorAll('.page').forEach(p => io.observe(p));
     }
 
     async function ensurePageMeta(pageNum) {
       if (pageMetaCache[pageNum]) return pageMetaCache[pageNum];
       const page = await pdfDoc.getPage(pageNum);
-      const rot = (page.rotate || 0) % 360;
-      const vp = page.getViewport({ scale: 1, rotation: rot });
-      const meta = { w: vp.width, h: vp.height, rot: rot, page: page };
+      const vp = page.getViewport({ scale: 1 });
+      const meta = { w: vp.width, h: vp.height, page: page };
       pageMetaCache[pageNum] = meta;
       return meta;
     }
 
     async function renderPage(pageNum, canvas) {
       const meta = await ensurePageMeta(pageNum);
-      const cw = containerWidth();
-      const cssW = Math.max(100, Math.round(cw * userScale));  // same width for all pages
-      const cssH = Math.round(cssW * (meta.h / meta.w));        // per-page aspect
+      const cssW = targetCssW;
+      const cssH = Math.round(cssW * (meta.h / meta.w));
       const pxW = Math.floor(cssW * dpr);
       const pxH = Math.floor(cssH * dpr);
+
+      // Cancel any in-flight render before starting a new one
+      if (renderTasks[pageNum]) { try { renderTasks[pageNum].cancel(); } catch(e) {} }
 
       if (canvas.width !== pxW || canvas.height !== pxH) { canvas.width = pxW; canvas.height = pxH; }
       canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
 
-      const viewport = meta.page.getViewport({ scale: cssW / meta.w, rotation: meta.rot });
       const ctx = canvas.getContext('2d', { alpha: false });
-      const rc = { canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null };
-      await meta.page.render(rc).promise;
-      canvas.dataset.rendered = '1';
+      ctx.save(); ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore();
+
+      const viewport = meta.page.getViewport({ scale: cssW / meta.w });
+      canvas.dataset.rendering = '1'; canvas.dataset.rendered = '0';
+      const task = meta.page.render({ canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null });
+      renderTasks[pageNum] = task;
+
+      try {
+        await task.promise;
+        canvas.dataset.rendered = '1';
+      } catch (e) {
+        console.warn('Render error on page', pageNum, e && e.message);
+      } finally {
+        canvas.dataset.rendering = '0';
+        if (renderTasks[pageNum] === task) delete renderTasks[pageNum];
+      }
 
       const dbg = document.getElementById('dbg'+pageNum);
-      if (dbg) dbg.textContent = `p${pageNum} rot:${meta.rot} meta:${Math.round(meta.w)}×${Math.round(meta.h)} css:${cssW}×${cssH} dpr:${dpr}`;
+      if (dbg) dbg.textContent = `p${pageNum} meta:${Math.round(meta.w)}×${Math.round(meta.h)} css:${cssW}×${cssH} dpr:${dpr}`;
 
       updateProgress(); updateMetaFromViewport();
     }
@@ -213,7 +239,8 @@
     function setUserScaleFromSlider(v) {
       userScale = Math.max(0.6, Math.min(2.2, v / 100));
       zoomMeta.textContent = Math.round(userScale * 100) + '%';
-      rerenderVisible();
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => setTargetWidthAndRerender(true), 80);
     }
     zoomSlider.addEventListener('input', (e) => setUserScaleFromSlider(parseInt(e.target.value,10)));
     zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
@@ -237,9 +264,10 @@
       pageMetaEl.textContent = 'Стр. ' + bestPage + ' / ' + totalPages;
     }
     window.addEventListener('scroll', () => { updateProgress(); updateMetaFromViewport(); }, {passive:true});
+
     window.addEventListener('resize', () => {
-      window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => { dpr = window.devicePixelRatio || 1; rerenderVisible(true); }, 120);
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { dpr = window.devicePixelRatio || 1; setTargetWidthAndRerender(true); }, 120);
     });
   </script>
 </body>
