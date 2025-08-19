@@ -1,544 +1,246 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PDF Reader — History_Climate.pdf</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Браузерный ридер — История климата (скролл, v5)</title>
   <style>
     :root {
-      --bg: #0b0c0f;
-      --panel: #121419;
-      --text: #e7e9ee;
-      --muted: #9aa3b2;
-      --accent: #5aa2ff;
-      --reader-font-size: 18px; /* for Reader Mode */
-      --shadow: 0 8px 20px rgba(0,0,0,0.35);
+      --bg: #0b0b0c;
+      --pagebg: #ffffff;
+      --fg: #e7e7ea;
+      --muted: #9aa0a6;
+      --accent: #8ab4f8;
+      --bar: rgba(0,0,0,0.7);
+      --bar-blur: blur(6px);
     }
-    * { box-sizing: border-box; }
-    html, body {
-      height: 100%;
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
+    .topbar, .bottombar {
+      position: fixed; left: 0; right: 0; z-index: 1000;
+      display: flex; align-items: center; gap: 12px;
+      padding: env(safe-area-inset-top) 12px 12px 12px;
+      backdrop-filter: var(--bar-blur); background: var(--bar);
     }
-
-    /* Top bar */
-    .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 12px;
-      background: linear-gradient(180deg, #0f1218 0%, #0b0c0f 100%);
-      border-bottom: 1px solid #1d2230;
-      backdrop-filter: blur(8px);
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-      white-space: nowrap;
-    }
-    .brand .dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 10px var(--accent);
-    }
-    .spacer { flex: 1; }
-
-    .control {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .select, .button, .range, .input {
-      background: var(--panel);
-      color: var(--text);
-      border: 1px solid #242a3a;
-      box-shadow: var(--shadow);
-      border-radius: 10px;
-      padding: 8px 10px;
-      outline: none;
-    }
-    .select { padding-right: 34px; }
-    .button {
-      cursor: pointer;
-      transition: background 0.2s ease, border-color 0.2s ease;
-    }
-    .button:hover {
-      background: #171b24;
-      border-color: #2b3450;
-    }
-    .range {
-      appearance: none;
-      width: 180px;
-      height: 34px;
-      padding: 0 8px;
-    }
-    .range::-webkit-slider-runnable-track {
-      height: 4px; border-radius: 999px; background: #2b3346;
-    }
-    .range::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
-      background: var(--accent);
-      margin-top: -7px;
-      box-shadow: 0 0 0 4px rgba(90,162,255,0.2);
-      cursor: pointer;
-    }
-    .range::-moz-range-track { height: 4px; border-radius: 999px; background: #2b3346; }
-    .range::-moz-range-thumb {
-      width: 18px; height: 18px; border-radius: 50%;
-      background: var(--accent);
-      border: none;
-      box-shadow: 0 0 0 4px rgba(90,162,255,0.2);
-      cursor: pointer;
-    }
-
-    .viewer {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 18px;
-      padding: 12px;
-      max-width: 1100px;
-      margin: 0 auto;
-      overflow-x: hidden; /* prevent horizontal scroll ever */
-    }
-
-    .page {
-      position: relative;
-      display: grid;
-      place-items: center;
-      background: #0e1117;
-      border: 1px solid #1b2230;
-      border-radius: 14px;
-      padding: 10px;
-      box-shadow: var(--shadow);
-    }
-    canvas {
-      width: 100% !important;  /* fit-to-width */
-      height: auto !important;
-      display: block;
-      border-radius: 8px;
-      background: white;
-    }
-    .pagenum {
-      position: absolute;
-      right: 14px;
-      bottom: 12px;
-      background: rgba(0,0,0,0.55);
-      color: #fff;
-      padding: 4px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-    }
-
-    /* Reader (text) mode */
-    .reader {
-      max-width: 900px;
-      margin: 12px auto;
-      padding: 0 16px 40px;
-      line-height: 1.7;
-      display: none; /* hidden by default */
-    }
-    .reader.active { display: block; }
-    .reader article {
-      font-size: var(--reader-font-size);
-      color: #e9ecf3;
-      text-rendering: optimizeLegibility;
-    }
-    .reader h2, .reader h3 {
-      margin-top: 2.2em;
-      margin-bottom: 0.6em;
-      line-height: 1.25;
-      color: #f0f4ff;
-    }
-    .reader p {
-      margin: 0.6em 0;
-    }
-    .reader hr {
-      border: none;
-      height: 1px;
-      background: #222a3a;
-      margin: 1.2em 0;
-    }
-
-    .hint {
-      color: var(--muted);
-      font-size: 13px;
-      margin-left: 8px;
-    }
-
-    .hidden { display: none !important; }
-    .toc-empty { color: var(--muted); }
-
-    .footer {
-      color: var(--muted);
-      font-size: 12px;
-      text-align: center;
-      padding: 30px 0 80px;
-    }
-
-    .backtotop {
-      position: fixed;
-      right: 14px;
-      bottom: 16px;
-      z-index: 15;
-      border-radius: 999px;
-      border: 1px solid #223048;
-      background: #121a28;
-      color: #eaf0ff;
-      padding: 10px 14px;
-      cursor: pointer;
-      box-shadow: var(--shadow);
-    }
-    .backtotop:hover { background: #0f1521; }
+    .topbar { top: 0; }
+    .bottombar { bottom: 0; top: auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)) 12px; justify-content: space-between; }
+    .btn { border: 0; border-radius: 12px; padding: 8px 12px; background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px; cursor: pointer; }
+    .btn:active { background: rgba(255,255,255,0.1); }
+    .meta { font-size: 13px; color: var(--muted); } .spacer { flex: 1; }
+    .pages { position: relative; width: 100%; max-width: 1200px; margin: 0 auto;
+      padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+    .page { display: grid; place-items: center; margin: 12px auto; width: 100%; position: relative; }
+    .page canvas { display: block; background: var(--pagebg); box-shadow: 0 6px 26px rgba(0,0,0,0.36); }
+    .pnum { margin-top: 6px; font-size: 12px; color: var(--muted); user-select: none; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1200; opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .overlay.show { opacity: 1; pointer-events: auto; }
+    .drawer { position: fixed; top: 0; bottom: 0; right: 0; width: min(88vw, 380px);
+      z-index: 1300; background: #121316; border-left: 1px solid #202124; transform: translateX(100%); transition: transform .25s; display: flex; flex-direction: column; }
+    .drawer.open { transform: translateX(0); }
+    .drawer header { padding: 16px; border-bottom: 1px solid #202124; font-weight: 600; }
+    .drawer .toc { flex: 1; overflow: auto; padding: 6px 8px 16px 8px; }
+    .toc button { width: 100%; text-align: left; padding: 10px 12px; margin: 6px 4px; background: transparent; color: var(--fg);
+      border: 1px solid #202124; border-radius: 10px; font-size: 15px; cursor: pointer; }
+    .progress { position: fixed; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,0.08); z-index: 900; transform: translateY(-3px); }
+    .progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+    .dbg { position: absolute; top: 4px; left: 4px; font-size: 10px; background: rgba(0,0,0,0.55); padding: 4px 6px; border-radius: 6px; display: none; }
+    .page.showdbg .dbg { display: block; }
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="dot"></span>
-      <span>PDF Reader</span>
-    </div>
-
-    <!-- Chapter jump (TOC) -->
-    <div class="control">
-      <label for="toc">Chapters:</label>
-      <select id="toc" class="select">
-        <option disabled selected>Loading…</option>
-      </select>
-      <span id="tocHint" class="hint"></span>
-    </div>
-
+  <div class="topbar">
+    <button id="menuBtn" class="btn">☰ Меню</button>
+    <div class="meta" id="pageMeta">Стр. — / —</div>
     <div class="spacer"></div>
-
-    <!-- Mode toggle -->
-    <div class="control">
-      <button id="modeBtn" class="button" title="Toggle Reader (text) mode">Reader mode: Off</button>
-      <span class="hint">Text-only mode for adjustable font size</span>
+    <div class="meta" id="zoomMeta">100%</div>
+    <button id="dbgBtn" class="btn" title="Показать отладку">D</button>
+  </div>
+  <div class="bottombar">
+    <div>
+      <button id="zoomOut" class="btn">−</button>
+      <input id="zoomSlider" type="range" min="60" max="220" value="100" step="5">
+      <button id="zoomIn" class="btn">+</button>
     </div>
+  </div>
+  <div class="pages" id="pages"></div>
+  <div class="progress"><span id="progressBar"></span></div>
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="drawer">
+    <header>Содержание<div class="meta">Коснитесь главы для перехода</div></header>
+    <div class="toc" id="tocList"></div>
+  </aside>
 
-    <!-- Font size slider (Reader Mode) -->
-    <div class="control" id="fontCtrl" style="display:none;">
-      <label for="fontRange">Font</label>
-      <input id="fontRange" class="range" type="range" min="14" max="28" step="1" value="18" />
-      <span id="fontVal" class="hint">18px</span>
-    </div>
-  </header>
-
-  <!-- Canvas page viewer -->
-  <main id="viewer" class="viewer" aria-label="PDF pages"></main>
-
-  <!-- Reader (reflowed text) -->
-  <section id="reader" class="reader" aria-label="Reflowed text">
-    <article id="readerContent">
-      <p class="toc-empty">Loading text…</p>
-    </article>
-  </section>
-
-  <button id="backToTop" class="backtotop" title="Back to top">↑ Top</button>
-
-  <div class="footer">Built with <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noreferrer" style="color:#8fb6ff;">PDF.js</a>. File: <code>History_Climate.pdf</code></div>
-
-  <!-- PDF.js (legacy script build for best compatibility with local files) -->
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js"></script>
-
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js"></script>
   <script>
-    (function() {
-      const pdfjsLib = window['pdfjs-dist/build/pdf'];
-      if (!pdfjsLib) {
-        alert('Failed to load PDF.js. Please check your internet connection.');
-        return;
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
+
+    const PDF_URL = 'History_Climate.pdf';
+    const pagesEl = document.getElementById('pages');
+    const pageMetaEl = document.getElementById('pageMeta');
+    const progressBar = document.getElementById('progressBar');
+    const menuBtn = document.getElementById('menuBtn');
+    const drawer = document.getElementById('drawer');
+    const overlay = document.getElementById('overlay');
+    const tocList = document.getElementById('tocList');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomInBtn = document.getElementById('zoomIn');
+    const zoomOutBtn = document.getElementById('zoomOut');
+    const zoomMeta = document.getElementById('zoomMeta');
+    const dbgBtn = document.getElementById('dbgBtn');
+
+    let pdfDoc = null, totalPages = 0;
+    let dpr = window.devicePixelRatio || 1;
+    let userScale = 1.0; // 100% = fit container width
+    let pageMetaCache = {}; // pageNum -> {w,h,rot,page}
+    let resizeTimer = null;
+    let showDebug = false;
+
+    const tocEntries = [
+      { title: 'Введение', page: 2 },
+      { title: 'Глава 1. Климат и история', page: 4 },
+      { title: 'Глава 2. Эти таинственные шумеры', page: 36 },
+      { title: 'Глава 3. Убейдцы и шумеры', page: 70 },
+      { title: 'Глава 4. Конец периода Джемдет-Наср.', page: 109 },
+      { title: 'Глава 5. Войны номов', page: 131 },
+      { title: 'Глава 6. Расцвет и гибель Аккадского царства', page: 149 },
+      { title: 'Глава 7. Возвышение Ура и появление амореев', page: 165 },
+      { title: 'Глава 8. Ближний Восток в ХVI-ХIV веках до н. э.', page: 192 },
+      { title: 'Глава 9. Коллапс бронзового века', page: 217 },
+      { title: 'Глава 10. Современные изменения климата', page: 253 }
+    ];
+
+    tocEntries.forEach(ent => {
+      const b = document.createElement('button'); b.textContent = ent.title;
+      b.addEventListener('click', () => { const t = document.querySelector('[data-page="' + ent.page + '"]'); if (t) t.scrollIntoView({behavior:'smooth', block:'start'}); closeDrawer(); });
+      tocList.appendChild(b);
+    });
+
+    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); }
+    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); }
+    menuBtn.addEventListener('click', () => (drawer.classList.contains('open') ? closeDrawer() : openDrawer()));
+    overlay.addEventListener('click', closeDrawer);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+    dbgBtn.addEventListener('click', () => {
+      showDebug = !showDebug;
+      document.querySelectorAll('.page').forEach(p => p.classList.toggle('showdbg', showDebug));
+    });
+
+    function containerWidth() { return Math.floor(pagesEl.getBoundingClientRect().width); }
+
+    pdfjsLib.getDocument(PDF_URL).promise.then(async pdf => {
+      pdfDoc = pdf; totalPages = pdf.numPages;
+
+      for (let i = 1; i <= totalPages; i++) {
+        const holder = document.createElement('div'); holder.className = 'page'; holder.dataset.page = String(i);
+        const dbg = document.createElement('div'); dbg.className = 'dbg'; dbg.id = 'dbg'+i; holder.appendChild(dbg);
+        const canvas = document.createElement('canvas'); canvas.id = 'p' + i; holder.appendChild(canvas);
+        const caption = document.createElement('div'); caption.className = 'pnum'; caption.textContent = 'Страница ' + i; holder.appendChild(caption);
+        pagesEl.appendChild(holder);
       }
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
-      // ===== Config =====
-      const PDF_URL = 'History_Climate.pdf'; // same folder as this HTML
-      const viewerEl = document.getElementById('viewer');
-      const readerEl = document.getElementById('reader');
-      const readerContent = document.getElementById('readerContent');
-      const tocSelect = document.getElementById('toc');
-      const tocHint = document.getElementById('tocHint');
-      const modeBtn = document.getElementById('modeBtn');
-      const fontCtrl = document.getElementById('fontCtrl');
-      const fontRange = document.getElementById('fontRange');
-      const fontVal = document.getElementById('fontVal');
-      const backToTop = document.getElementById('backToTop');
+      observeAndRender();
+      updateProgress(); updateMetaFromViewport();
+    }).catch(err => console.error('PDF load error:', err));
 
-      let pdfDoc = null;
-      let pageCount = 0;
-      let pagePlaceholders = [];
-      let pageTextCache = new Map(); // pageNumber -> text (string)
-      let observer = null;
-      let inReader = false;
-
-      // ===== Helpers =====
-      function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
-      function scrollToEl(el) { el?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-      function fitWidthScale(page, containerWidth) {
-        const viewport = page.getViewport({ scale: 1 });
-        return containerWidth / viewport.width;
-      }
-      function createPagePlaceholder(n) {
-        const pageDiv = document.createElement('div');
-        pageDiv.className = 'page';
-        pageDiv.id = 'page-' + n;
-
-        const canvas = document.createElement('canvas');
-        canvas.setAttribute('data-page-number', n);
-        canvas.role = 'img';
-        canvas.ariaLabel = 'Page ' + n;
-        pageDiv.appendChild(canvas);
-
-        const badge = document.createElement('div');
-        badge.className = 'pagenum';
-        badge.textContent = n + ' / ' + pageCount;
-        pageDiv.appendChild(badge);
-
-        viewerEl.appendChild(pageDiv);
-        return { pageDiv, canvas };
-      }
-
-      async function renderPage(n) {
-        if (!pdfDoc) return;
-        const { pageDiv, canvas } = pagePlaceholders[n - 1] ?? {};
-        if (!canvas) return;
-        // If already rendered, skip (canvas has data-rt flag)
-        if (canvas.dataset.rendered === '1') return;
-
-        const page = await pdfDoc.getPage(n);
-        const containerWidth = viewerEl.clientWidth - 24; // account for padding
-        const scale = fitWidthScale(page, containerWidth);
-        const viewport = page.getViewport({ scale });
-
-        const context = canvas.getContext('2d');
-        const outputScale = window.devicePixelRatio || 1;
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = viewport.width + 'px';
-        canvas.style.height = viewport.height + 'px';
-
-        const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
-        await page.render({ canvasContext: context, viewport, transform }).promise;
-        canvas.dataset.rendered = '1';
-
-        // Pre-cache text layer (used for Reader Mode + TOC fallback)
-        if (!pageTextCache.has(n)) {
-          const textContent = await page.getTextContent({ includeMarkedContent: true });
-          const text = textContent.items.map(i => i.str).join(' ').replace(/\s{2,}/g, ' ').trim();
-          pageTextCache.set(n, text);
+    let io = null;
+    function observeAndRender() {
+      if (io) io.disconnect();
+      io = new IntersectionObserver(async (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const pageIndex = parseInt(entry.target.dataset.page, 10);
+          const canvas = entry.target.querySelector('canvas');
+          if (canvas.dataset.rendered === '1') continue;
+          await renderPage(pageIndex, canvas);
         }
-      }
+      }, { root: null, rootMargin: '1600px 0px', threshold: 0.01 });
+      document.querySelectorAll('.page').forEach(p => io.observe(p));
+    }
 
-      function setupObserver() {
-        if (observer) observer.disconnect();
-        observer = new IntersectionObserver((entries) => {
-          entries.forEach(e => {
-            if (e.isIntersecting) {
-              const canvas = e.target.querySelector('canvas');
-              const n = parseInt(canvas?.dataset.pageNumber, 10);
-              if (Number.isFinite(n)) renderPage(n);
-            }
-          });
-        }, { rootMargin: '600px 0px' }); // pre-render ahead
-        pagePlaceholders.forEach(({ pageDiv }) => observer.observe(pageDiv));
-      }
+    async function ensurePageMeta(pageNum) {
+      if (pageMetaCache[pageNum]) return pageMetaCache[pageNum];
+      const page = await pdfDoc.getPage(pageNum);
+      const rot = (page.rotate || 0) % 360;
+      const vp = page.getViewport({ scale: 1, rotation: rot });
+      const meta = { w: vp.width, h: vp.height, rot: rot, page: page };
+      pageMetaCache[pageNum] = meta;
+      return meta;
+    }
 
-      async function buildTOC() {
-        let outline = await pdfDoc.getOutline();
-        let entries = [];
+    async function renderPage(pageNum, canvas) {
+      const meta = await ensurePageMeta(pageNum);
+      const cw = containerWidth();
+      const cssW = Math.max(100, Math.round(cw * userScale));  // same width for all pages
+      const cssH = Math.round(cssW * (meta.h / meta.w));        // per-page aspect
+      const pxW = Math.floor(cssW * dpr);
+      const pxH = Math.floor(cssH * dpr);
 
-        // If PDF Outline exists, map to page numbers
-        if (Array.isArray(outline) && outline.length) {
-          const walk = async (items) => {
-            for (const item of items) {
-              let title = (item.title || '').trim();
-              let pageIndex = null;
-              if (item.dest) {
-                try {
-                  const dest = await pdfDoc.getDestination(item.dest);
-                  if (dest) {
-                    const ref = dest[0];
-                    pageIndex = await pdfDoc.getPageIndex(ref);
-                  }
-                } catch {}
-              }
-              if (title && pageIndex !== null) {
-                entries.push({ title, page: pageIndex + 1 });
-              }
-              if (item.items && item.items.length) await walk(item.items);
-            }
-          };
-          await walk(outline);
+      if (canvas.width !== pxW || canvas.height !== pxH) { canvas.width = pxW; canvas.height = pxH; }
+      canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+
+      const viewport = meta.page.getViewport({ scale: cssW / meta.w, rotation: meta.rot });
+      const ctx = canvas.getContext('2d', { alpha: false });
+      const rc = { canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null };
+      await meta.page.render(rc).promise;
+      canvas.dataset.rendered = '1';
+
+      const dbg = document.getElementById('dbg'+pageNum);
+      if (dbg) dbg.textContent = `p${pageNum} rot:${meta.rot} meta:${Math.round(meta.w)}×${Math.round(meta.h)} css:${cssW}×${cssH} dpr:${dpr}`;
+
+      updateProgress(); updateMetaFromViewport();
+    }
+
+    function rerenderVisible(forceAll=false) {
+      const pages = document.querySelectorAll('.page');
+      const vh = window.innerHeight;
+      pages.forEach(p => {
+        const r = p.getBoundingClientRect();
+        const near = r.top < vh*2 && r.bottom > -vh*1;
+        if (near || forceAll) {
+          const pageNum = parseInt(p.dataset.page, 10);
+          const canvas = p.querySelector('canvas');
+          canvas.dataset.rendered = '0';
+          renderPage(pageNum, canvas);
         }
-
-        // Fallback: detect simple "Глава" / "Chapter" headings from text cache
-        if (!entries.length) {
-          tocHint.textContent = 'No embedded outline; using detected headings.';
-          const HEAD_RE = /\b(Глава|Chapter)\s+([0-9IVXLC]+)[\.\s:-]+(.{4,80})/i;
-          const firstN = Math.min(pageCount, 60); // look at first 60 pages
-          for (let n = 1; n <= firstN; n++) {
-            // ensure text cached
-            if (!pageTextCache.has(n)) {
-              try {
-                const page = await pdfDoc.getPage(n);
-                const textContent = await page.getTextContent({ includeMarkedContent: true });
-                const text = textContent.items.map(i => i.str).join(' ').replace(/\s{2,}/g, ' ').trim();
-                pageTextCache.set(n, text);
-              } catch {}
-            }
-            const text = pageTextCache.get(n) || '';
-            const m = text.match(HEAD_RE);
-            if (m) {
-              const short = (m[0] || '').substring(0, 90);
-              entries.push({ title: short, page: n });
-            }
-          }
-        } else {
-          tocHint.textContent = '';
-        }
-
-        // Populate <select>
-        tocSelect.innerHTML = '';
-        if (!entries.length) {
-          tocSelect.innerHTML = '<option disabled selected>(No chapters found)</option>';
-          tocSelect.disabled = true;
-          return;
-        }
-        tocSelect.disabled = false;
-        const firstOpt = document.createElement('option');
-        firstOpt.textContent = 'Jump to chapter…';
-        firstOpt.disabled = true;
-        firstOpt.selected = true;
-        tocSelect.appendChild(firstOpt);
-
-        entries.forEach(({ title, page }, idx) => {
-          const opt = document.createElement('option');
-          opt.value = String(page);
-          opt.textContent = `${title}`;
-          tocSelect.appendChild(opt);
-        });
-
-        tocSelect.addEventListener('change', (e) => {
-          const page = parseInt(e.target.value, 10);
-          const el = document.getElementById('page-' + page);
-          if (el) scrollToEl(el);
-        });
-      }
-
-      async function buildReaderContent() {
-        // Generate simple text-only content by concatenating page text.
-        // Also insert lightweight headings if "Глава" / "Chapter" is detected.
-        readerContent.innerHTML = '';
-        const HEAD_RE = /\b(Глава|Chapter)\s+([0-9IVXLC]+)[\.\s:-]+(.{4,100})/i;
-
-        for (let n = 1; n <= pageCount; n++) {
-          if (!pageTextCache.has(n)) {
-            try {
-              const page = await pdfDoc.getPage(n);
-              const tc = await page.getTextContent({ includeMarkedContent: true });
-              const text = tc.items.map(i => i.str).join(' ').replace(/\s{2,}/g, ' ').trim();
-              pageTextCache.set(n, text);
-            } catch { pageTextCache.set(n, ''); }
-          }
-          const raw = pageTextCache.get(n);
-          if (!raw) continue;
-
-          // Insert a page divider
-          const hr = document.createElement('hr');
-          readerContent.appendChild(hr);
-
-          const m = raw.match(HEAD_RE);
-          if (m) {
-            const h = document.createElement('h2');
-            h.textContent = m[0];
-            readerContent.appendChild(h);
-          }
-
-          // Split on sentence-ish boundaries for readability
-          const para = document.createElement('p');
-          para.textContent = raw;
-          readerContent.appendChild(para);
-        }
-      }
-
-      function setReaderMode(on) {
-        inReader = !!on;
-        modeBtn.textContent = 'Reader mode: ' + (inReader ? 'On' : 'Off');
-        fontCtrl.style.display = inReader ? '' : 'none';
-        readerEl.classList.toggle('active', inReader);
-        viewerEl.style.display = inReader ? 'none' : 'grid';
-        if (inReader && !readerContent.dataset.ready) {
-          buildReaderContent().then(() => { readerContent.dataset.ready = '1'; });
-        }
-      }
-
-      // Back to top
-      backToTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
-
-      // Reader font size
-      const applyFont = (v) => {
-        document.documentElement.style.setProperty('--reader-font-size', v + 'px');
-        fontVal.textContent = v + 'px';
-      };
-      fontRange.addEventListener('input', (e) => applyFont(e.target.value));
-      applyFont(fontRange.value);
-
-      // Mode toggle
-      modeBtn.addEventListener('click', () => setReaderMode(!inReader));
-
-      // Handle resize: re-render visible pages to maintain fit-to-width
-      let rAF = null;
-      window.addEventListener('resize', () => {
-        if (inReader) return;
-        if (rAF) cancelAnimationFrame(rAF);
-        rAF = requestAnimationFrame(async () => {
-          // Clear rendered flags so pages re-render with new width
-          pagePlaceholders.forEach(({ pageDiv }) => {
-            const canvas = pageDiv.querySelector('canvas');
-            if (canvas) {
-              canvas.dataset.rendered = '0';
-              canvas.width = 0; canvas.height = 0;
-            }
-          });
-          setupObserver();
-          // Immediately render first couple of pages
-          for (let n = 1; n <= Math.min(4, pageCount); n++) renderPage(n);
-        });
       });
+    }
 
-      // ===== Boot =====
-      (async function init() {
-        try {
-          const loadingTask = pdfjsLib.getDocument({
-            url: PDF_URL,
-            disableAutoFetch: false,
-            enableXfa: false,
-          });
-          pdfDoc = await loadingTask.promise;
-        } catch (err) {
-          console.error(err);
-          alert('Could not open "' + PDF_URL + '". Place this HTML file and the PDF in the same folder, then reload.');
-          return;
-        }
+    function setUserScaleFromSlider(v) {
+      userScale = Math.max(0.6, Math.min(2.2, v / 100));
+      zoomMeta.textContent = Math.round(userScale * 100) + '%';
+      rerenderVisible();
+    }
+    zoomSlider.addEventListener('input', (e) => setUserScaleFromSlider(parseInt(e.target.value,10)));
+    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
+    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(60, parseInt(zoomSlider.value,10) - 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
 
-        pageCount = pdfDoc.numPages;
-        // Create placeholders and lazy-render
-        pagePlaceholders = Array.from({ length: pageCount }, (_, i) => createPagePlaceholder(i + 1));
-        setupObserver();
-        // Render top pages immediately
-        for (let n = 1; n <= Math.min(4, pageCount); n++) renderPage(n);
-
-        // Build TOC
-        buildTOC();
-      })();
-    })();
+    function updateProgress() {
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      const full = document.documentElement.scrollHeight - window.innerHeight;
+      const percent = full > 0 ? Math.max(0, Math.min(100, Math.round(scrollY / full * 100))) : 0;
+      progressBar.style.width = percent + '%';
+    }
+    function updateMetaFromViewport() {
+      const pages = document.querySelectorAll('.page');
+      let bestPage = 1, bestDist = Infinity;
+      const viewportTop = 0;
+      pages.forEach(p => {
+        const r = p.getBoundingClientRect();
+        const dist = Math.abs(r.top - viewportTop);
+        if (dist < bestDist) { bestDist = dist; bestPage = parseInt(p.dataset.page, 10); }
+      });
+      pageMetaEl.textContent = 'Стр. ' + bestPage + ' / ' + totalPages;
+    }
+    window.addEventListener('scroll', () => { updateProgress(); updateMetaFromViewport(); }, {passive:true});
+    window.addEventListener('resize', () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => { dpr = window.devicePixelRatio || 1; rerenderVisible(true); }, 120);
+    });
   </script>
 </body>
 </html>
