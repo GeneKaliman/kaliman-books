@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Браузерный ридер — История климата (скролл, v7)</title>
+  <title>Браузерный ридер — История климата (скролл, v8)</title>
   <style>
     :root {
       --bg: #0b0b0c;
@@ -16,7 +16,7 @@
       --pageW: 960px; /* updated at runtime */
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { height: 100%; }
+    html, body { height: 100%; overflow-x: hidden; }
     body { margin: 0; background: var(--bg); color: var(--fg);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
     .topbar, .bottombar {
@@ -49,6 +49,34 @@
     .progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
     .dbg { position: absolute; top: 4px; left: 4px; font-size: 10px; background: rgba(0,0,0,0.55); padding: 4px 6px; border-radius: 6px; display: none; }
     .page.showdbg .dbg { display: block; }
+
+    /* Bigger, smoother slider */
+    .zoom-pack { display: flex; align-items: center; gap: 10px; }
+    input[type="range"] {
+      width: clamp(260px, 42vw, 520px);
+      height: 6px;
+      background: transparent;
+      -webkit-appearance: none;
+      appearance: none;
+      touch-action: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px; background: rgba(255,255,255,0.25); border-radius: 3px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--accent); margin-top: -6px;
+      box-shadow: 0 0 0 3px rgba(0,0,0,0.2);
+    }
+    input[type="range"]::-moz-range-track {
+      height: 6px; background: rgba(255,255,255,0.25); border-radius: 3px;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0,0,0,0.2);
+    }
   </style>
 </head>
 <body>
@@ -60,9 +88,9 @@
     <button id="dbgBtn" class="btn" title="Показать отладку">D</button>
   </div>
   <div class="bottombar">
-    <div>
+    <div class="zoom-pack">
       <button id="zoomOut" class="btn">−</button>
-      <input id="zoomSlider" type="range" min="60" max="220" value="100" step="5">
+      <input id="zoomSlider" type="range" min="60" max="220" value="100" step="1">
       <button id="zoomIn" class="btn">+</button>
     </div>
   </div>
@@ -96,12 +124,12 @@
 
     let pdfDoc = null, totalPages = 0;
     let dpr = window.devicePixelRatio || 1;
-    let userScale = 1.0; // 100% = fit viewport (not container) width
+    let userScale = 1.0; // 100% = baseline viewport width
+    let baselineW = 960;  // captured at load; updated only if viewport width changes significantly
     let pageMetaCache = {}; // pageNum -> {w,h,page}
     let renderTasks = {};   // pageNum -> renderTask
     let resizeTimer = null;
     let showDebug = false;
-    let targetCssW = 960;   // unified page width in CSS pixels
 
     const tocEntries = [
       { title: 'Введение', page: 2 },
@@ -123,16 +151,18 @@
       tocList.appendChild(b);
     });
 
-    function setTargetWidthAndRerender(forceAll=false) {
-      // base width from viewport, not affected by scrollbars
-      const base = Math.min(1200, Math.max(320, document.documentElement.clientWidth));
-      targetCssW = Math.round(base * userScale);
-      document.documentElement.style.setProperty('--pageW', targetCssW + 'px');
-      rerenderVisible(forceAll);
+    function getVVWidth() {
+      return Math.floor((window.visualViewport && window.visualViewport.width) || document.documentElement.clientWidth);
     }
 
-    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); setTimeout(() => setTargetWidthAndRerender(false), 80); }
-    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); setTimeout(() => setTargetWidthAndRerender(false), 80); }
+    function applyPageWidth() {
+      const cssW = Math.round(baselineW * userScale);
+      document.documentElement.style.setProperty('--pageW', cssW + 'px');
+      return cssW;
+    }
+
+    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); setTimeout(() => rerenderVisible(false), 80); }
+    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); setTimeout(() => rerenderVisible(false), 80); }
     menuBtn.addEventListener('click', () => (drawer.classList.contains('open') ? closeDrawer() : openDrawer()));
     overlay.addEventListener('click', closeDrawer);
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
@@ -145,6 +175,10 @@
     pdfjsLib.getDocument(PDF_URL).promise.then(async pdf => {
       pdfDoc = pdf; totalPages = pdf.numPages;
 
+      // Capture baseline based on initial viewport width
+      baselineW = Math.min(1200, Math.max(320, getVVWidth()));
+      applyPageWidth();
+
       for (let i = 1; i <= totalPages; i++) {
         const holder = document.createElement('div'); holder.className = 'page'; holder.dataset.page = String(i);
         const dbg = document.createElement('div'); dbg.className = 'dbg'; dbg.id = 'dbg'+i; holder.appendChild(dbg);
@@ -155,7 +189,6 @@
         pagesEl.appendChild(holder);
       }
 
-      setTargetWidthAndRerender(true);
       observeAndRender();
       updateProgress(); updateMetaFromViewport();
     }).catch(err => console.error('PDF load error:', err));
@@ -186,12 +219,11 @@
 
     async function renderPage(pageNum, canvas) {
       const meta = await ensurePageMeta(pageNum);
-      const cssW = targetCssW;
+      const cssW = Math.round(baselineW * userScale);
       const cssH = Math.round(cssW * (meta.h / meta.w));
       const pxW = Math.floor(cssW * dpr);
       const pxH = Math.floor(cssH * dpr);
 
-      // Cancel any in-flight render before starting a new one
       if (renderTasks[pageNum]) { try { renderTasks[pageNum].cancel(); } catch(e) {} }
 
       if (canvas.width !== pxW || canvas.height !== pxH) { canvas.width = pxW; canvas.height = pxH; }
@@ -239,12 +271,36 @@
     function setUserScaleFromSlider(v) {
       userScale = Math.max(0.6, Math.min(2.2, v / 100));
       zoomMeta.textContent = Math.round(userScale * 100) + '%';
+      applyPageWidth();
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => setTargetWidthAndRerender(true), 80);
+      resizeTimer = setTimeout(() => rerenderVisible(true), 40);
     }
     zoomSlider.addEventListener('input', (e) => setUserScaleFromSlider(parseInt(e.target.value,10)));
-    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
-    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(60, parseInt(zoomSlider.value,10) - 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
+    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 5); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
+    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(60, parseInt(zoomSlider.value,10) - 5); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
+
+    // Only recompute baseline width when viewport width changes by a lot (e.g., window resize)
+    let lastVVW = getVVWidth();
+    function handleViewportResize() {
+      const now = getVVWidth();
+      if (Math.abs(now - lastVVW) < 120) return; // ignore tiny changes from scrollbars/chrome
+      lastVVW = now;
+      baselineW = Math.min(1200, Math.max(320, now));
+      applyPageWidth();
+      rerenderVisible(true);
+    }
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(handleViewportResize, 100);
+      });
+    } else {
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(handleViewportResize, 100);
+      });
+    }
 
     function updateProgress() {
       const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
@@ -264,11 +320,6 @@
       pageMetaEl.textContent = 'Стр. ' + bestPage + ' / ' + totalPages;
     }
     window.addEventListener('scroll', () => { updateProgress(); updateMetaFromViewport(); }, {passive:true});
-
-    window.addEventListener('resize', () => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => { dpr = window.devicePixelRatio || 1; setTargetWidthAndRerender(true); }, 120);
-    });
   </script>
 </body>
 </html>
