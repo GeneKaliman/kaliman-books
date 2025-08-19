@@ -16,7 +16,13 @@
       --pageW: 960px; /* updated at runtime for rotation/large changes only */
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { height: 100%; overflow-x: hidden; touch-action: pan-y pinch-zoom; }
+    /*
+      Allow both horizontal and vertical scrolling when the user pinch‑zooms. Previously we set
+      overflow-x to hidden and limited touch-action to pan-y, which prevented panning horizontally
+      after zooming in. By letting overflow-x be auto and enabling pan-x as well, users can freely
+      drag the enlarged page in any direction. Pinch‑zoom remains enabled.
+    */
+    html, body { height: 100%; overflow-x: auto; touch-action: pan-x pan-y pinch-zoom; overscroll-behavior: contain; }
     body { margin: 0; background: var(--bg); color: var(--fg);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
     .topbar {
@@ -117,6 +123,7 @@
     const overlay = document.getElementById('overlay');
     const tocList = document.getElementById('tocList');
     const spinner = document.getElementById('spinner');
+    const topbarEl = document.querySelector('.topbar');
 
     let pdfDoc = null, totalPages = 0;
     let dprBase = window.devicePixelRatio || 1;
@@ -129,6 +136,26 @@
 
     // Default page aspect ratio (width/height) used to fit pages on screen before meta is available.
     let pageAspect = 0.707;
+
+    /**
+     * Maintain fixed elements (topbar, progress bar) visible when the user pinch‑zooms and pans.
+     * On mobile browsers, position:fixed elements do not automatically follow the visual viewport
+     * when it is offset due to zooming. This helper applies a transform to keep them in view.
+     */
+    function updateFixedPositions() {
+      const vv = window.visualViewport;
+      if (!vv || !topbarEl) return;
+      const x = vv.offsetLeft || 0;
+      const y = vv.offsetTop || 0;
+      // Shift the fixed bars so they stay pinned to the visible area when zoomed and panned
+      topbarEl.style.transform = `translate(${x}px, ${y}px)`;
+      // Align progress bar horizontally; it sticks to bottom so only X matters
+      const progressBarEl = document.querySelector('.progress');
+      if (progressBarEl) {
+        // Preserve the existing vertical translation (-3px) defined in CSS and only shift horizontally
+        progressBarEl.style.transform = `translate(${x}px, -3px)`;
+      }
+    }
 
     // --- Hard-coded TOC ---
     const tocEntries = [
@@ -359,6 +386,11 @@
       })();
       window.visualViewport.addEventListener('resize', schedule);
       window.visualViewport.addEventListener('scroll', schedule); // panning while zoomed
+      // Also reposition fixed UI elements when zoom/pan occurs
+      window.visualViewport.addEventListener('resize', updateFixedPositions);
+      window.visualViewport.addEventListener('scroll', updateFixedPositions);
+      // Initial positioning in case the page loads while zoomed
+      updateFixedPositions();
     } else {
       window.addEventListener('resize', () => {
         clearTimeout(resizeTimer); resizeTimer = setTimeout(onVVChange, 80);
