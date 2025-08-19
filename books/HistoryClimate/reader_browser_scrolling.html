@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Браузерный ридер — История климата (статический, авто‑подгон)</title>
+  <title>Браузерный ридер — История климата (pinch‑zoom)</title>
   <style>
     :root {
       --bg: #0b0b0c;
@@ -13,10 +13,10 @@
       --accent: #8ab4f8;
       --bar: rgba(0,0,0,0.7);
       --bar-blur: blur(6px);
-      --pageW: 960px; /* updated at runtime */
+      --pageW: 960px; /* updated at runtime for rotation/large changes only */
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { height: 100%; overflow-x: hidden; }
+    html, body { height: 100%; overflow-x: hidden; touch-action: pan-y pinch-zoom; }
     body { margin: 0; background: var(--bg); color: var(--fg);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
     .topbar {
@@ -81,12 +81,15 @@
     const tocList = document.getElementById('tocList');
 
     let pdfDoc = null, totalPages = 0;
-    let dpr = window.devicePixelRatio || 1;
+    let dprBase = window.devicePixelRatio || 1;
+    let vvScale = (window.visualViewport && window.visualViewport.scale) || 1;
     let pageMetaCache = {}; // pageNum -> {w,h,page}
     let renderTasks = {};   // pageNum -> renderTask
     let resizeTimer = null;
-    let baselineW = 960;
+    let baselineW = 960;    // CSS width of a page (doesn't change during pinch)
+    let lastVVW = 0, lastScale = vvScale;
 
+    // --- Hard-coded TOC ---
     const tocEntries = [
       { title: 'Введение', page: 2 },
       { title: 'Глава 1. Климат и история', page: 4 },
@@ -106,6 +109,7 @@
       tocList.appendChild(b);
     });
 
+    // --- Menu ---
     function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); }
     function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); }
     menuBtn.addEventListener('click', () => (drawer.classList.contains('open') ? closeDrawer() : openDrawer()));
@@ -127,16 +131,19 @@
       }
     }
 
-    // One-time width (fit viewport), then only on orientation/large change
+    // One-time width (fit viewport), then only on rotation / large viewport changes
     function snapshotWidth() {
       const vw = getVVWidth();
+      lastVVW = vw;
       setPageWidth(Math.min(1200, Math.max(360, vw * 0.92)));
     }
     snapshotWidth();
 
+    // --- PDF bootstrap ---
     pdfjsLib.getDocument(PDF_URL).promise.then(async pdf => {
       pdfDoc = pdf; totalPages = pdf.numPages;
 
+      // Build DOM
       for (let i = 1; i <= totalPages; i++) {
         const holder = document.createElement('div'); holder.className = 'page'; holder.dataset.page = String(i);
         const sheet = document.createElement('div'); sheet.className = 'sheet';
@@ -186,12 +193,18 @@
       return meta;
     }
 
+    function effectiveDPR() {
+      vvScale = (window.visualViewport && window.visualViewport.scale) || 1;
+      return (window.devicePixelRatio || 1) * (vvScale || 1);
+    }
+
     async function renderPage(pageNum, canvas) {
       const meta = await ensurePageMeta(pageNum);
       const cssW = baselineW;
       const cssH = Math.round(cssW * (meta.h / meta.w));
-      const pxW = Math.floor(cssW * dpr);
-      const pxH = Math.floor(cssH * dpr);
+      const eff = effectiveDPR();
+      const pxW = Math.floor(cssW * eff);
+      const pxH = Math.floor(cssH * eff);
 
       if (renderTasks[pageNum]) { try { renderTasks[pageNum].cancel(); } catch(e) {} }
 
@@ -203,7 +216,7 @@
 
       const viewport = meta.page.getViewport({ scale: cssW / meta.w });
       canvas.dataset.rendering = '1'; canvas.dataset.rendered = '0';
-      const task = meta.page.render({ canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null });
+      const task = meta.page.render({ canvasContext: ctx, viewport, transform: eff !== 1 ? [eff,0,0,eff,0,0] : null });
       renderTasks[pageNum] = task;
 
       try { await task.promise; canvas.dataset.rendered = '1'; }
@@ -228,29 +241,44 @@
       });
     }
 
-    // Recompute width on orientation change / large viewport change
-    function onViewportResize() {
-      const now = getVVWidth();
-      const diff = Math.abs(now - baselineW);
-      // Only react if the change is significant (rotation or manual resize)
-      if (diff > 120) {
-        setPageWidth(Math.min(1200, Math.max(360, now * 0.92)));
+    // Handle viewport changes:
+    // - If width changed a lot => rotation/layout change: refit CSS width & skeletons
+    // - If scale changed (pinch) => keep CSS width; just rerender visible pages at higher/lower DPR for crispness
+    function onVVChange() {
+      const vv = window.visualViewport;
+      const nowW = vv ? vv.width : document.documentElement.clientWidth;
+      const nowScale = vv ? vv.scale : 1;
+      const widthDelta = Math.abs(nowW - lastVVW);
+      const scaleDelta = Math.abs((nowScale || 1) - (lastScale || 1));
+
+      lastVVW = nowW; lastScale = nowScale;
+
+      if (widthDelta > 120) {
+        // Orientation or big chrome change — refit page width
+        setPageWidth(Math.min(1200, Math.max(360, nowW * 0.92)));
+        rerenderVisible();
+      } else if (scaleDelta > 0.02) {
+        // Pinch — rerender visible with new effective DPR
         rerenderVisible();
       }
     }
+
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', () => {
-        clearTimeout(resizeTimer); resizeTimer = setTimeout(onViewportResize, 160);
-      });
+      const schedule = (() => {
+        let raf = 0;
+        return () => {
+          if (raf) return;
+          raf = requestAnimationFrame(() => { raf = 0; onVVChange(); });
+        };
+      })();
+      window.visualViewport.addEventListener('resize', schedule);
+      window.visualViewport.addEventListener('scroll', schedule); // panning while zoomed
     } else {
       window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer); resizeTimer = setTimeout(onViewportResize, 160);
+        clearTimeout(resizeTimer); resizeTimer = setTimeout(onVVChange, 80);
       });
     }
-    window.addEventListener('orientationchange', () => {
-      // Give the browser time to reflow after rotation
-      setTimeout(onViewportResize, 250);
-    });
+    window.addEventListener('orientationchange', () => { setTimeout(onVVChange, 220); });
 
     function updateProgress() {
       const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
