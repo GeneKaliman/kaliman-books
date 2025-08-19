@@ -26,7 +26,7 @@
 
     /* Top / bottom chrome */
     .topbar, .bottombar {
-      position: fixed; left: 0; right: 0; z-index: 50;
+      position: fixed; left: 0; right: 0; z-index: 1000;
       display: flex; align-items: center; gap: 12px;
       padding: env(safe-area-inset-top) 12px 12px 12px;
       backdrop-filter: var(--bar-blur);
@@ -41,6 +41,7 @@
     .btn {
       appearance: none; border: 0; border-radius: 12px; padding: 8px 12px;
       background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px;
+      cursor: pointer;
     }
     .btn:active { background: rgba(255,255,255,0.1); }
     .icon { font-size: 20px; line-height: 1; }
@@ -60,14 +61,13 @@
       display: grid; place-items: center;
       margin: 16px auto;
       width: 100%;
-      perspective: 1000px;
     }
     .page canvas {
       display: block;
       background: var(--pagebg);
       box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-      width: 100%; /* updated at runtime for exact width */
-      height: auto; /* exact height set via style for layout before render */
+      width: 100%; /* exact pixel width set via style attribute */
+      height: auto; /* height set via style too */
     }
     .page .pnum {
       margin-top: 6px;
@@ -77,10 +77,15 @@
     }
 
     /* Drawer (TOC) */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+      z-index: 1200; opacity: 0; pointer-events: none; transition: opacity .2s ease;
+    }
+    .overlay.show { opacity: 1; pointer-events: auto; }
     .drawer {
-      position: fixed; top: 0; bottom: 0; right: 0; width: min(88vw, 380px); z-index: 60;
-      background: #121316; border-left: 1px solid #202124; transform: translateX(100%);
-      transition: transform .25s ease;
+      position: fixed; top: 0; bottom: 0; right: 0; width: min(88vw, 380px);
+      z-index: 1300; background: #121316; border-left: 1px solid #202124;
+      transform: translateX(100%); transition: transform .25s ease;
       display: flex; flex-direction: column;
     }
     .drawer.open { transform: translateX(0); }
@@ -89,17 +94,17 @@
     .toc button {
       width: 100%; text-align: left; padding: 10px 12px; margin: 6px 4px;
       background: transparent; color: var(--fg); border: 1px solid #202124; border-radius: 10px;
-      font-size: 15px;
+      font-size: 15px; cursor: pointer;
     }
     .toc button:active { background: rgba(255,255,255,0.06); }
 
     .zoom-pack { display: flex; align-items: center; gap: 8px; }
-    input[type="range"] { width: 160px; }
+    input[type="range"] { width: 200px; }
 
     /* Progress line */
     .progress {
       position: fixed; left: 0; right: 0; bottom: 0;
-      height: 3px; background: rgba(255,255,255,0.08); z-index: 55;
+      height: 3px; background: rgba(255,255,255,0.08); z-index: 900;
       transform: translateY(-3px);
     }
     .progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s ease; }
@@ -110,22 +115,22 @@
     <button id="menuBtn" class="btn"><span class="icon">☰</span> Меню</button>
     <div class="meta" id="pageMeta">Стр. — / —</div>
     <div class="spacer"></div>
-    <button id="aaBtn" class="btn">Aa</button>
+    <div class="meta" id="zoomMeta">100%</div>
   </div>
 
   <div class="bottombar">
     <div class="zoom-pack">
       <button id="zoomOut" class="btn">−</button>
-      <input id="zoomSlider" type="range" min="70" max="220" value="100" step="5">
+      <input id="zoomSlider" type="range" min="60" max="220" value="100" step="5">
       <button id="zoomIn" class="btn">+</button>
     </div>
-    <button id="fitBtn" class="btn">Подогнать ширину</button>
   </div>
 
   <div class="pages" id="pages"></div>
   <div class="progress"><span id="progressBar"></span></div>
 
   <!-- TOC Drawer -->
+  <div class="overlay" id="overlay"></div>
   <aside class="drawer" id="drawer">
     <header>
       Содержание
@@ -140,22 +145,22 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
-    const PDF_URL = 'History_Climate.pdf'; // тот же источник (страничные номера — как в PDF)
+    const PDF_URL = 'History_Climate.pdf'; // нумерация как в PDF
     const pagesEl = document.getElementById('pages');
     const pageMeta = document.getElementById('pageMeta');
     const progressBar = document.getElementById('progressBar');
     const menuBtn = document.getElementById('menuBtn');
     const drawer = document.getElementById('drawer');
+    const overlay = document.getElementById('overlay');
     const tocList = document.getElementById('tocList');
-    const aaBtn = document.getElementById('aaBtn');
     const zoomSlider = document.getElementById('zoomSlider');
     const zoomInBtn = document.getElementById('zoomIn');
     const zoomOutBtn = document.getElementById('zoomOut');
-    const fitBtn = document.getElementById('fitBtn');
+    const zoomMeta = document.getElementById('zoomMeta');
 
     let pdfDoc = null, totalPages = 0;
-    let scale = parseFloat(localStorage.getItem('bScale') || '1.0');
-    let fitWidth = JSON.parse(localStorage.getItem('bFitWidth') || 'true');
+    let baseFitScale = 1;      // scale that fits width at current viewport
+    let userScale = 1.0;       // 1.0 means "fit width"
     let originalPageWidth = null;
     let dpr = window.devicePixelRatio || 1;
 
@@ -185,15 +190,16 @@
       tocList.appendChild(b);
     });
 
-    function openDrawer() { drawer.classList.add('open'); }
-    function closeDrawer() { drawer.classList.remove('open'); }
-    menuBtn.addEventListener('click', () => drawer.classList.toggle('open'));
-    aaBtn.addEventListener('click', () => window.scrollTo({top: 0, behavior: 'smooth'})); // быстрый подъём наверх
+    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); }
+    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); }
+    menuBtn.addEventListener('click', () => (drawer.classList.contains('open') ? closeDrawer() : openDrawer()));
+    overlay.addEventListener('click', closeDrawer);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 
     // Load PDF
     pdfjsLib.getDocument(PDF_URL).promise.then(pdf => {
       pdfDoc = pdf; totalPages = pdf.numPages;
-      // Create empty page shells first to allow smooth scroll + correct progress
+
       for (let i = 1; i <= totalPages; i++) {
         const holder = document.createElement('div');
         holder.className = 'page';
@@ -201,16 +207,13 @@
 
         const canvas = document.createElement('canvas');
         canvas.id = 'p' + i;
-        canvas.style.width = '100%';
-        // placeholder height for better scroll position before render
-        canvas.style.height = '130vw'; // will be corrected at render
+        holder.appendChild(canvas);
 
         const caption = document.createElement('div');
         caption.className = 'pnum';
         caption.textContent = 'Страница ' + i;
-
-        holder.appendChild(canvas);
         holder.appendChild(caption);
+
         pagesEl.appendChild(holder);
       }
 
@@ -231,9 +234,15 @@
           if (canvas.dataset.rendered === '1') continue;
           await renderPage(pageIndex, canvas);
         }
-      }, { root: null, rootMargin: '1200px 0px', threshold: 0.01 });
+      }, { root: null, rootMargin: '1600px 0px', threshold: 0.01 });
 
       document.querySelectorAll('.page').forEach(p => io.observe(p));
+    }
+
+    function computeBaseFitScale() {
+      const containerWidthCss = Math.min(pagesEl.clientWidth, document.documentElement.clientWidth);
+      if (!originalPageWidth) return 1;
+      return containerWidthCss / originalPageWidth;
     }
 
     async function renderPage(pageNum, canvas) {
@@ -241,47 +250,28 @@
       if (!originalPageWidth) {
         originalPageWidth = page.getViewport({ scale: 1 }).width;
       }
-      // calculate scale
-      let s = scale;
-      if (fitWidth) {
-        const targetW = Math.min(window.innerWidth, document.documentElement.clientWidth);
-        s = targetW / originalPageWidth;
-      }
-      const viewport = page.getViewport({ scale: s });
+      baseFitScale = computeBaseFitScale();
+      const effectiveScale = baseFitScale * userScale;
+
+      const viewport = page.getViewport({ scale: effectiveScale });
       // set canvas sizes
       const outW = Math.floor(viewport.width * dpr);
       const outH = Math.floor(viewport.height * dpr);
-      canvas.width = outW; canvas.height = outH;
+      if (canvas.width !== outW || canvas.height !== outH) {
+        canvas.width = outW; canvas.height = outH;
+      }
       canvas.style.width = Math.floor(viewport.width) + 'px';
       canvas.style.height = Math.floor(viewport.height) + 'px';
       const ctx = canvas.getContext('2d');
       const rc = { canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null };
       await page.render(rc).promise;
       canvas.dataset.rendered = '1';
-      // after first real render, ensure progress/meta are correct
       updateProgress();
       updateMetaFromViewport();
     }
 
-    // Zoom controls
-    function setScaleFromSlider(v) {
-      fitWidth = false;
-      scale = Math.max(0.5, Math.min(3.0, v / 100));
-      localStorage.setItem('bScale', String(scale));
-      localStorage.setItem('bFitWidth', JSON.stringify(fitWidth));
-      rerenderVisible();
-    }
-    zoomSlider.addEventListener('input', (e) => setScaleFromSlider(parseInt(e.target.value,10)));
-    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setScaleFromSlider(parseInt(zoomSlider.value,10)); });
-    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(70, parseInt(zoomSlider.value,10) - 10); setScaleFromSlider(parseInt(zoomSlider.value,10)); });
-    fitBtn.addEventListener('click', () => {
-      fitWidth = true;
-      localStorage.setItem('bFitWidth', JSON.stringify(fitWidth));
-      rerenderVisible(true);
-    });
-
     function rerenderVisible(forceAll=false) {
-      // re-render only pages in/near viewport for speed
+      baseFitScale = computeBaseFitScale();
       const pages = document.querySelectorAll('.page');
       const vh = window.innerHeight;
       pages.forEach(p => {
@@ -290,11 +280,21 @@
         if (near || forceAll) {
           const pageNum = parseInt(p.dataset.page, 10);
           const canvas = p.querySelector('canvas');
-          canvas.dataset.rendered = '0'; // mark dirty
+          canvas.dataset.rendered = '0';
           renderPage(pageNum, canvas);
         }
       });
     }
+
+    // Zoom controls (100% = fit-to-width)
+    function setUserScaleFromSlider(v) {
+      userScale = Math.max(0.6, Math.min(2.2, v / 100));
+      zoomMeta.textContent = Math.round(userScale * 100) + '%';
+      rerenderVisible();
+    }
+    zoomSlider.addEventListener('input', (e) => setUserScaleFromSlider(parseInt(e.target.value,10)));
+    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
+    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(60, parseInt(zoomSlider.value,10) - 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
 
     // Progress & meta (current page in view)
     function updateProgress() {
@@ -305,7 +305,6 @@
     }
 
     function updateMetaFromViewport() {
-      // choose the page whose top is closest to viewport top but not below mid
       const pages = document.querySelectorAll('.page');
       let bestPage = 1, bestDist = Infinity;
       const viewportTop = 0;
@@ -319,16 +318,6 @@
 
     window.addEventListener('scroll', () => { updateProgress(); updateMetaFromViewport(); }, {passive:true});
     window.addEventListener('resize', () => { dpr = window.devicePixelRatio || 1; rerenderVisible(true); });
-
-    // Close drawer on outside swipe from left (inside drawer)
-    let drawerStartX = null;
-    drawer.addEventListener('touchstart', (e) => { if (e.touches.length===1) drawerStartX = e.touches[0].clientX; }, {passive:true});
-    drawer.addEventListener('touchend', (e) => {
-      if (drawerStartX==null) return;
-      const dx = e.changedTouches[0].clientX - drawerStartX;
-      if (dx > 70) closeDrawer();
-      drawerStartX = null;
-    }, {passive:true});
   </script>
 </body>
 </html>
