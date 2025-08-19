@@ -12,26 +12,73 @@
         }
         #sidebar {
             width: 250px;
-            background: #e0e0e0;
+            background: #333;
             padding: 20px;
             height: 100vh;
             overflow-y: auto;
-            border-right: 1px solid #ccc;
+            border-right: 1px solid #444;
+            position: fixed;
+            top: 0;
+            left: -250px;
+            transition: left 0.3s ease;
+            z-index: 10;
+            color: #fff;
+        }
+        #sidebar.active {
+            left: 0;
+        }
+        #sidebar h3 {
+            margin-top: 0;
+            font-size: 1.2em;
+            color: #ddd;
+        }
+        #sidebar ul {
+            list-style: none;
+            padding: 0;
+        }
+        #sidebar ul li {
+            margin: 10px 0;
+        }
+        #sidebar ul li a {
+            color: #1e90ff;
+            text-decoration: none;
+            font-size: 0.95em;
+        }
+        #sidebar ul li a:hover {
+            color: #87cefa;
+            text-decoration: underline;
+        }
+        #toggle-menu {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: #1e90ff;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            z-index: 20;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        #toggle-menu:hover {
+            background: #87cefa;
         }
         #canvas-container {
             flex: 1;
             padding: 20px;
             overflow-y: auto;
             height: 100vh;
+            margin-left: 0;
+            transition: margin-left 0.3s ease;
+        }
+        #canvas-container.shifted {
+            margin-left: 250px;
         }
         #pdf-canvas {
             border: 1px solid #ddd;
             display: block;
             margin: 0 auto;
-        }
-        #page-controls {
-            text-align: center;
-            margin: 10px 0;
         }
         #zoom-controls {
             text-align: center;
@@ -41,13 +88,10 @@
             padding: 5px 10px;
             margin: 0 5px;
         }
-        #page-num {
-            width: 50px;
-            text-align: center;
-        }
     </style>
 </head>
 <body>
+    <button id="toggle-menu">Меню</button>
     <div id="sidebar">
         <h3>Меню глав</h3>
         <ul>
@@ -66,11 +110,6 @@
         </ul>
     </div>
     <div id="canvas-container">
-        <div id="page-controls">
-            <button id="prev">Предыдущая</button>
-            <span>Страница <input type="number" id="page-num" min="1"> из <span id="page-count"></span></span>
-            <button id="next">Следующая</button>
-        </div>
         <div id="zoom-controls">
             <button id="zoom-out">-</button>
             <span>Масштаб: <span id="zoom-level">100</span>%</span>
@@ -79,10 +118,8 @@
         <canvas id="pdf-canvas"></canvas>
     </div>
 
-    <!-- Load PDF.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>
-        // Set the worker source for PDF.js
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
         let pdfDoc = null;
@@ -92,34 +129,42 @@
         let scale = 1.0;
         const canvas = document.getElementById('pdf-canvas');
         const ctx = canvas.getContext('2d');
+        const sidebar = document.getElementById('sidebar');
+        const canvasContainer = document.getElementById('canvas-container');
+        const toggleMenu = document.getElementById('toggle-menu');
 
-        // Hard-coded PDF file name in the same directory
         const pdfUrl = 'History_Climate.pdf';
         pdfjsLib.getDocument(pdfUrl).promise.then((doc) => {
             pdfDoc = doc;
-            document.getElementById('page-count').textContent = pdfDoc.numPages;
-            renderPage(pageNum);
+            renderAllPages();
         }).catch(err => {
             console.error('Error loading PDF:', err);
             alert('Не удалось загрузить PDF. Убедитесь, что файл History_Climate.pdf находится в той же директории.');
         });
 
-        function renderPage(num) {
-            pageRendering = true;
-            document.getElementById('page-num').value = num;
-            pdfDoc.getPage(num).then((page) => {
+        function renderAllPages() {
+            pdfDoc.getPage(1).then((page) => {
                 const viewport = page.getViewport({ scale: scale });
-                canvas.height = viewport.height;
+                canvas.height = viewport.height * pdfDoc.numPages; // Stack all pages vertically
                 canvas.width = viewport.width;
 
-                const renderContext = {
-                    canvasContext: ctx,
-                    viewport: viewport
-                };
-                page.render(renderContext).promise.then(() => {
+                const renderTasks = [];
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    renderTasks.push(pdfDoc.getPage(i).then((page) => {
+                        const pageViewport = page.getViewport({ scale: scale });
+                        const renderContext = {
+                            canvasContext: ctx,
+                            viewport: pageViewport,
+                            transform: [1, 0, 0, 1, 0, (i - 1) * pageViewport.height] // Stack pages vertically
+                        };
+                        return page.render(renderContext).promise;
+                    }));
+                }
+
+                Promise.all(renderTasks).then(() => {
                     pageRendering = false;
                     if (pageNumPending !== null) {
-                        renderPage(pageNumPending);
+                        goToPage(pageNumPending);
                         pageNumPending = null;
                     }
                 });
@@ -131,57 +176,30 @@
             if (pageRendering) {
                 pageNumPending = pageNum;
             } else {
-                renderPage(pageNum);
+                const yOffset = (pageNum - 1) * canvas.height / pdfDoc.numPages;
+                canvasContainer.scrollTop = yOffset;
             }
-            document.getElementById('page-num').value = pageNum;
+            toggleMenu.click(); // Close menu after selection
         }
-
-        document.getElementById('prev').addEventListener('click', () => {
-            if (pageNum <= 1) return;
-            pageNum--;
-            if (pageRendering) {
-                pageNumPending = pageNum;
-            } else {
-                renderPage(pageNum);
-            }
-        });
-
-        document.getElementById('next').addEventListener('click', () => {
-            if (pageNum >= pdfDoc.numPages) return;
-            pageNum++;
-            if (pageRendering) {
-                pageNumPending = pageNum;
-            } else {
-                renderPage(pageNum);
-            }
-        });
-
-        document.getElementById('page-num').addEventListener('change', (e) => {
-            const newPage = parseInt(e.target.value, 10);
-            if (newPage >= 1 && newPage <= pdfDoc.numPages) {
-                pageNum = newPage;
-                if (!pageRendering) {
-                    renderPage(pageNum);
-                } else {
-                    pageNumPending = pageNum;
-                }
-            } else {
-                e.target.value = pageNum;
-            }
-        });
 
         document.getElementById('zoom-in').addEventListener('click', () => {
             scale += 0.2;
-            renderPage(pageNum);
+            renderAllPages();
             document.getElementById('zoom-level').textContent = Math.round(scale * 100);
         });
 
         document.getElementById('zoom-out').addEventListener('click', () => {
             if (scale > 0.2) {
                 scale -= 0.2;
-                renderPage(pageNum);
+                renderAllPages();
                 document.getElementById('zoom-level').textContent = Math.round(scale * 100);
             }
+        });
+
+        toggleMenu.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+            canvasContainer.classList.toggle('shifted');
+            toggleMenu.textContent = sidebar.classList.contains('active') ? 'Закрыть' : 'Меню';
         });
     </script>
 </body>
