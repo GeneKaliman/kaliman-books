@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Браузерный ридер — История климата (скролл)</title>
+  <title>Браузерный ридер — История климата (скролл, v3)</title>
   <style>
     :root {
       --bg: #0b0b0c;
@@ -24,7 +24,6 @@
       overscroll-behavior: none;
     }
 
-    /* Top / bottom chrome */
     .topbar, .bottombar {
       position: fixed; left: 0; right: 0; z-index: 1000;
       display: flex; align-items: center; gap: 12px;
@@ -44,30 +43,26 @@
       cursor: pointer;
     }
     .btn:active { background: rgba(255,255,255,0.1); }
-    .icon { font-size: 20px; line-height: 1; }
     .meta { font-size: 13px; color: var(--muted); }
     .spacer { flex: 1; }
 
-    /* Scrolling pages */
     .pages {
       position: relative;
       width: 100%;
-      max-width: min(100vw, 1200px);
+      max-width: 1200px;
       margin: 0 auto;
       padding-top: calc(48px + env(safe-area-inset-top));
       padding-bottom: calc(70px + env(safe-area-inset-bottom));
     }
     .page {
       display: grid; place-items: center;
-      margin: 16px auto;
+      margin: 12px auto;
       width: 100%;
     }
     .page canvas {
       display: block;
       background: var(--pagebg);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-      width: 100%; /* exact pixel width set via style attribute */
-      height: auto; /* height set via style too */
+      box-shadow: 0 6px 26px rgba(0,0,0,0.36);
     }
     .page .pnum {
       margin-top: 6px;
@@ -76,7 +71,6 @@
       user-select: none;
     }
 
-    /* Drawer (TOC) */
     .overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.35);
       z-index: 1200; opacity: 0; pointer-events: none; transition: opacity .2s ease;
@@ -101,7 +95,6 @@
     .zoom-pack { display: flex; align-items: center; gap: 8px; }
     input[type="range"] { width: 200px; }
 
-    /* Progress line */
     .progress {
       position: fixed; left: 0; right: 0; bottom: 0;
       height: 3px; background: rgba(255,255,255,0.08); z-index: 900;
@@ -112,7 +105,7 @@
 </head>
 <body>
   <div class="topbar">
-    <button id="menuBtn" class="btn"><span class="icon">☰</span> Меню</button>
+    <button id="menuBtn" class="btn">☰ Меню</button>
     <div class="meta" id="pageMeta">Стр. — / —</div>
     <div class="spacer"></div>
     <div class="meta" id="zoomMeta">100%</div>
@@ -129,7 +122,6 @@
   <div class="pages" id="pages"></div>
   <div class="progress"><span id="progressBar"></span></div>
 
-  <!-- TOC Drawer -->
   <div class="overlay" id="overlay"></div>
   <aside class="drawer" id="drawer">
     <header>
@@ -145,7 +137,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
-    const PDF_URL = 'History_Climate.pdf'; // нумерация как в PDF
+    const PDF_URL = 'History_Climate.pdf';
     const pagesEl = document.getElementById('pages');
     const pageMeta = document.getElementById('pageMeta');
     const progressBar = document.getElementById('progressBar');
@@ -159,10 +151,11 @@
     const zoomMeta = document.getElementById('zoomMeta');
 
     let pdfDoc = null, totalPages = 0;
-    let baseFitScale = 1;      // scale that fits width at current viewport
-    let userScale = 1.0;       // 1.0 means "fit width"
     let originalPageWidth = null;
+    let fitScaleSnapshot = 1;   // recomputed per rerender cycle
+    let userScale = 1.0;        // 1.0 = fit-to-width
     let dpr = window.devicePixelRatio || 1;
+    let resizeTimer = null;
 
     const tocEntries = [
       { title: 'Введение', page: 2 },
@@ -178,7 +171,6 @@
       { title: 'Глава 10. Современные изменения климата', page: 253 }
     ];
 
-    // Build TOC
     tocEntries.forEach(ent => {
       const b = document.createElement('button');
       b.textContent = ent.title;
@@ -196,7 +188,15 @@
     overlay.addEventListener('click', closeDrawer);
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 
-    // Load PDF
+    function containerCssWidth() {
+      return Math.floor(pagesEl.getBoundingClientRect().width);
+    }
+
+    function snapshotFitScale() {
+      if (!originalPageWidth) return 1;
+      return containerCssWidth() / originalPageWidth;
+    }
+
     pdfjsLib.getDocument(PDF_URL).promise.then(pdf => {
       pdfDoc = pdf; totalPages = pdf.numPages;
 
@@ -222,7 +222,7 @@
       updateMetaFromViewport();
     }).catch(err => console.error('PDF load error:', err));
 
-    // IntersectionObserver to lazy-render pages as they enter viewport
+    // Lazy rendering
     let io = null;
     function observeAndRender() {
       if (io) io.disconnect();
@@ -239,39 +239,37 @@
       document.querySelectorAll('.page').forEach(p => io.observe(p));
     }
 
-    function computeBaseFitScale() {
-      const containerWidthCss = Math.min(pagesEl.clientWidth, document.documentElement.clientWidth);
-      if (!originalPageWidth) return 1;
-      return containerWidthCss / originalPageWidth;
-    }
-
     async function renderPage(pageNum, canvas) {
       const page = await pdfDoc.getPage(pageNum);
       if (!originalPageWidth) {
         originalPageWidth = page.getViewport({ scale: 1 }).width;
       }
-      baseFitScale = computeBaseFitScale();
-      const effectiveScale = baseFitScale * userScale;
+      if (!fitScaleSnapshot) fitScaleSnapshot = 1;
+      const effScale = fitScaleSnapshot * userScale;
 
-      const viewport = page.getViewport({ scale: effectiveScale });
-      // set canvas sizes
-      const outW = Math.floor(viewport.width * dpr);
-      const outH = Math.floor(viewport.height * dpr);
-      if (canvas.width !== outW || canvas.height !== outH) {
-        canvas.width = outW; canvas.height = outH;
+      const viewport = page.getViewport({ scale: effScale });
+      const cssW = Math.round(viewport.width);
+      const cssH = Math.round(viewport.height);
+      const pxW = Math.floor(cssW * dpr);
+      const pxH = Math.floor(cssH * dpr);
+
+      if (canvas.width !== pxW || canvas.height !== pxH) {
+        canvas.width = pxW; canvas.height = pxH;
       }
-      canvas.style.width = Math.floor(viewport.width) + 'px';
-      canvas.style.height = Math.floor(viewport.height) + 'px';
-      const ctx = canvas.getContext('2d');
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+
+      const ctx = canvas.getContext('2d', { alpha: false });
       const rc = { canvasContext: ctx, viewport, transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null };
       await page.render(rc).promise;
       canvas.dataset.rendered = '1';
+
       updateProgress();
       updateMetaFromViewport();
     }
 
     function rerenderVisible(forceAll=false) {
-      baseFitScale = computeBaseFitScale();
+      fitScaleSnapshot = snapshotFitScale();
       const pages = document.querySelectorAll('.page');
       const vh = window.innerHeight;
       pages.forEach(p => {
@@ -286,7 +284,7 @@
       });
     }
 
-    // Zoom controls (100% = fit-to-width)
+    // Zoom (100% = fit-to-width)
     function setUserScaleFromSlider(v) {
       userScale = Math.max(0.6, Math.min(2.2, v / 100));
       zoomMeta.textContent = Math.round(userScale * 100) + '%';
@@ -296,7 +294,7 @@
     zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
     zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(60, parseInt(zoomSlider.value,10) - 10); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
 
-    // Progress & meta (current page in view)
+    // Progress & meta
     function updateProgress() {
       const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
       const full = document.documentElement.scrollHeight - window.innerHeight;
@@ -317,7 +315,15 @@
     }
 
     window.addEventListener('scroll', () => { updateProgress(); updateMetaFromViewport(); }, {passive:true});
-    window.addEventListener('resize', () => { dpr = window.devicePixelRatio || 1; rerenderVisible(true); });
+
+    // Debounced resize -> single consistent rerender snapshot
+    window.addEventListener('resize', () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        dpr = window.devicePixelRatio || 1;
+        rerenderVisible(true);
+      }, 120);
+    });
   </script>
 </body>
 </html>
