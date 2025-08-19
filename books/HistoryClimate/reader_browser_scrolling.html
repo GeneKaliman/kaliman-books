@@ -244,7 +244,10 @@
         // landscape orientation: constrain width so that the page fits vertically
         candidate = Math.min(widthByViewport, widthByHeight);
       }
-      const w = Math.min(1200, Math.max(360, candidate));
+      // Allow the computed width to become small if necessary to fit vertically; do not enforce
+      // a relatively large minimum that could lead to cropping on extremely wide screens.
+      const minW = 160;
+      const w = Math.min(1200, Math.max(minW, candidate));
       return w;
     }
 
