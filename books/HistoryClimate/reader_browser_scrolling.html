@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Браузерный ридер — История климата (скролл, v8)</title>
+  <title>Браузерный ридер — История климата (скролл, v9)</title>
   <style>
     :root {
       --bg: #0b0b0c;
@@ -50,7 +50,7 @@
     .dbg { position: absolute; top: 4px; left: 4px; font-size: 10px; background: rgba(0,0,0,0.55); padding: 4px 6px; border-radius: 6px; display: none; }
     .page.showdbg .dbg { display: block; }
 
-    /* Bigger, smoother slider */
+    /* Bigger, smoother slider that "waits" */
     .zoom-pack { display: flex; align-items: center; gap: 10px; }
     input[type="range"] {
       width: clamp(260px, 42vw, 520px);
@@ -58,8 +58,8 @@
       background: transparent;
       -webkit-appearance: none;
       appearance: none;
-      touch-action: none;
       cursor: pointer;
+      touch-action: none;
     }
     input[type="range"]::-webkit-slider-runnable-track {
       height: 6px; background: rgba(255,255,255,0.25); border-radius: 3px;
@@ -129,6 +129,8 @@
     let pageMetaCache = {}; // pageNum -> {w,h,page}
     let renderTasks = {};   // pageNum -> renderTask
     let resizeTimer = null;
+    let isSliding = false;
+    let idleZoomTimer = null;
     let showDebug = false;
 
     const tocEntries = [
@@ -158,6 +160,15 @@
     function applyPageWidth() {
       const cssW = Math.round(baselineW * userScale);
       document.documentElement.style.setProperty('--pageW', cssW + 'px');
+      // Update skeleton heights if we already know metas
+      document.querySelectorAll('.page').forEach(p => {
+        const pageNum = parseInt(p.dataset.page, 10);
+        const meta = pageMetaCache[pageNum];
+        if (!meta) return;
+        const h = Math.round(cssW * (meta.h / meta.w));
+        const sheet = p.querySelector('.sheet');
+        if (sheet) sheet.style.height = h + 'px';
+      });
       return cssW;
     }
 
@@ -189,9 +200,27 @@
         pagesEl.appendChild(holder);
       }
 
+      // Preflight metas to set skeleton heights so late pages (e.g., Chapter 10) have space and render reliably.
+      preflightMetas();
+
       observeAndRender();
       updateProgress(); updateMetaFromViewport();
     }).catch(err => console.error('PDF load error:', err));
+
+    // Pre-compute page metas progressively and set skeleton heights
+    async function preflightMetas() {
+      const cssW = Math.round(baselineW * userScale);
+      for (let i = 1; i <= totalPages; i++) {
+        if (!pageMetaCache[i]) {
+          const meta = await ensurePageMeta(i);
+          const h = Math.round(cssW * (meta.h / meta.w));
+          const sheet = document.querySelector('[data-page="'+i+'"] .sheet');
+          if (sheet) sheet.style.height = h + 'px';
+          // Allow UI to breathe
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+    }
 
     let io = null;
     function observeAndRender() {
@@ -204,7 +233,7 @@
           if (canvas.dataset.rendered === '1' || canvas.dataset.rendering === '1') continue;
           await renderPage(pageIndex, canvas);
         }
-      }, { root: null, rootMargin: '1400px 0px', threshold: 0.01 });
+      }, { root: null, rootMargin: '2000px 0px', threshold: 0.01 });
       document.querySelectorAll('.page').forEach(p => io.observe(p));
     }
 
@@ -224,6 +253,7 @@
       const pxW = Math.floor(cssW * dpr);
       const pxH = Math.floor(cssH * dpr);
 
+      // Cancel any in-flight render before starting a new one
       if (renderTasks[pageNum]) { try { renderTasks[pageNum].cancel(); } catch(e) {} }
 
       if (canvas.width !== pxW || canvas.height !== pxH) { canvas.width = pxW; canvas.height = pxH; }
@@ -268,37 +298,50 @@
       });
     }
 
-    function setUserScaleFromSlider(v) {
-      userScale = Math.max(0.6, Math.min(2.2, v / 100));
-      zoomMeta.textContent = Math.round(userScale * 100) + '%';
-      applyPageWidth();
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => rerenderVisible(true), 40);
-    }
-    zoomSlider.addEventListener('input', (e) => setUserScaleFromSlider(parseInt(e.target.value,10)));
-    zoomInBtn.addEventListener('click', () => { zoomSlider.value = Math.min(220, parseInt(zoomSlider.value,10) + 5); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
-    zoomOutBtn.addEventListener('click', () => { zoomSlider.value = Math.max(60, parseInt(zoomSlider.value,10) - 5); setUserScaleFromSlider(parseInt(zoomSlider.value,10)); });
-
-    // Only recompute baseline width when viewport width changes by a lot (e.g., window resize)
-    let lastVVW = getVVWidth();
-    function handleViewportResize() {
-      const now = getVVWidth();
-      if (Math.abs(now - lastVVW) < 120) return; // ignore tiny changes from scrollbars/chrome
-      lastVVW = now;
-      baselineW = Math.min(1200, Math.max(320, now));
+    // Zoom handling — "wait" behavior
+    function commitZoom() {
       applyPageWidth();
       rerenderVisible(true);
     }
 
+    function setUserScaleFromSlider(v) {
+      userScale = Math.max(0.6, Math.min(2.2, v / 100));
+      zoomMeta.textContent = Math.round(userScale * 100) + '%';
+      // Update skeleton sizes immediately so layout looks right while sliding,
+      // but delay heavy re-render until user stops moving.
+      applyPageWidth();
+      clearTimeout(idleZoomTimer);
+      idleZoomTimer = setTimeout(() => { if (!isSliding) commitZoom(); }, 300);
+    }
+
+    // Pointer-aware controls so we only commit on release
+    zoomSlider.addEventListener('pointerdown', () => { isSliding = true; });
+    zoomSlider.addEventListener('pointerup', () => { isSliding = false; commitZoom(); });
+    zoomSlider.addEventListener('pointercancel', () => { isSliding = false; commitZoom(); });
+    zoomSlider.addEventListener('change', (e) => { setUserScaleFromSlider(parseInt(e.target.value,10)); commitZoom(); });
+    zoomSlider.addEventListener('input', (e) => setUserScaleFromSlider(parseInt(e.target.value,10)));
+
+    zoomInBtn.addEventListener('click', () => { const v = Math.min(220, parseInt(zoomSlider.value,10) + 5); zoomSlider.value = v; setUserScaleFromSlider(v); commitZoom(); });
+    zoomOutBtn.addEventListener('click', () => { const v = Math.max(60, parseInt(zoomSlider.value,10) - 5); zoomSlider.value = v; setUserScaleFromSlider(v); commitZoom(); });
+
+    // Only recompute baseline width when viewport width changes by a lot
+    let lastVVW = getVVWidth();
+    function handleViewportResize() {
+      const now = getVVWidth();
+      if (Math.abs(now - lastVVW) < 120) return; // ignore tiny changes from scrollbars
+      lastVVW = now;
+      baselineW = Math.min(1200, Math.max(320, now));
+      commitZoom();
+    }
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(handleViewportResize, 100);
+        resizeTimer = setTimeout(handleViewportResize, 120);
       });
     } else {
       window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(handleViewportResize, 100);
+        resizeTimer = setTimeout(handleViewportResize, 120);
       });
     }
 
