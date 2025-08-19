@@ -147,13 +147,17 @@
       if (!vv || !topbarEl) return;
       const x = vv.offsetLeft || 0;
       const y = vv.offsetTop || 0;
+      // Compute inverse scale to keep UI size constant when pinch‑zooming
+      const scale = vv.scale || 1;
       // Shift the fixed bars so they stay pinned to the visible area when zoomed and panned
-      topbarEl.style.transform = `translate(${x}px, ${y}px)`;
-      // Align progress bar horizontally; it sticks to bottom so only X matters
+      // and apply inverse scaling to counteract page zoom.
+      topbarEl.style.transformOrigin = '0 0';
+      topbarEl.style.transform = `translate(${x}px, ${y}px) scale(${1/scale})`;
+      // Align progress bar horizontally and apply the same inverse scaling. Preserve vertical offset (-3px).
       const progressBarEl = document.querySelector('.progress');
       if (progressBarEl) {
-        // Preserve the existing vertical translation (-3px) defined in CSS and only shift horizontally
-        progressBarEl.style.transform = `translate(${x}px, -3px)`;
+        progressBarEl.style.transformOrigin = '0 0';
+        progressBarEl.style.transform = `translate(${x}px, -3px) scale(${1/scale})`;
       }
     }
 
@@ -209,16 +213,23 @@
       const vw = getVVWidth();
       const vh = getVVHeight();
       // Height available for the page: subtract top bar and some bottom margin (progress bar, safe area)
-      const topbarEl = document.querySelector('.topbar');
-      const topBarH = topbarEl ? topbarEl.offsetHeight : 0;
+      const topbarNode = document.querySelector('.topbar');
+      const topBarH = topbarNode ? topbarNode.offsetHeight : 0;
       const bottomMargin = 80; // enough space for progress bar and OS nav bars
       const availH = Math.max(0, vh - topBarH - bottomMargin);
-      // Maximum width based on height and page aspect ratio
-      const maxWByHeight = availH * pageAspect;
-      // Desired width by viewport width
+      // If the viewport is taller than it is wide (portrait), fit by width to remove side margins.
+      // Otherwise (landscape) ensure the page fits vertically by clamping width based on height.
       const widthByViewport = vw * 0.92;
-      // Compute width, clamped to reasonable bounds
-      const w = Math.min(1200, Math.max(360, Math.min(widthByViewport, maxWByHeight)));
+      const widthByHeight = availH * pageAspect;
+      let candidate;
+      if (vh >= vw) {
+        // portrait orientation: fill the width
+        candidate = widthByViewport;
+      } else {
+        // landscape orientation: constrain width so that the page fits vertically
+        candidate = Math.min(widthByViewport, widthByHeight);
+      }
+      const w = Math.min(1200, Math.max(360, candidate));
       return w;
     }
 
