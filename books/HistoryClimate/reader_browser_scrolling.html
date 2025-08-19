@@ -137,6 +137,19 @@
     // Default page aspect ratio (width/height) used to fit pages on screen before meta is available.
     let pageAspect = 0.707;
 
+    // Control visibility of the top bar and progress bar. Toggling allows readers to hide
+    // chrome during reading and reveal it again with a tap. The bars are visible by default.
+    let menuVisible = true;
+    function setBarsVisibility(show) {
+      menuVisible = show;
+      if (topbarEl) topbarEl.style.display = show ? 'flex' : 'none';
+      const progressEl = document.querySelector('.progress');
+      if (progressEl) progressEl.style.display = show ? 'block' : 'none';
+    }
+    function toggleBars() {
+      setBarsVisibility(!menuVisible);
+    }
+
     /**
      * Maintain fixed elements (topbar, progress bar) visible when the user pinch‑zooms and pans.
      * On mobile browsers, position:fixed elements do not automatically follow the visual viewport
@@ -219,7 +232,9 @@
       const availH = Math.max(0, vh - topBarH - bottomMargin);
       // If the viewport is taller than it is wide (portrait), fit by width to remove side margins.
       // Otherwise (landscape) ensure the page fits vertically by clamping width based on height.
-      const widthByViewport = vw * 0.92;
+      // Use the full viewport width to avoid side margins in portrait mode. Previously we used
+      // 92% which left noticeable black bars. In landscape we will still constrain width below.
+      const widthByViewport = vw;
       const widthByHeight = availH * pageAspect;
       let candidate;
       if (vh >= vw) {
@@ -269,6 +284,12 @@
       }
       // Recompute width with the new aspect if necessary
       setPageWidth(computeFitWidth());
+      // Attach tap handler to toggle the visibility of the top bar and progress bar during reading
+      pagesEl.addEventListener('click', (e) => {
+        // Ignore clicks on the drawer or the topbar itself
+        if (drawer.contains(e.target) || topbarEl.contains(e.target)) return;
+        toggleBars();
+      });
     }).catch(err => console.error('PDF load error:', err));
 
     async function preflightMetas() {
