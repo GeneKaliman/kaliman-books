@@ -230,25 +230,17 @@
       const topBarH = topbarNode ? topbarNode.offsetHeight : 0;
       const bottomMargin = 80; // enough space for progress bar and OS nav bars
       const availH = Math.max(0, vh - topBarH - bottomMargin);
-      // If the viewport is taller than it is wide (portrait), fit by width to remove side margins.
-      // Otherwise (landscape) ensure the page fits vertically by clamping width based on height.
-      // Use the full viewport width to avoid side margins in portrait mode. Previously we used
-      // 92% which left noticeable black bars. In landscape we will still constrain width below.
-      const widthByViewport = vw;
-      const widthByHeight = availH * pageAspect;
-      let candidate;
-      if (vh >= vw) {
-        // portrait orientation: fill the width
-        candidate = widthByViewport;
-      } else {
-        // landscape orientation: constrain width so that the page fits vertically
-        candidate = Math.min(widthByViewport, widthByHeight);
-      }
-      // Allow the computed width to become small if necessary to fit vertically; do not enforce
-      // a relatively large minimum that could lead to cropping on extremely wide screens.
-      const minW = 160;
-      const w = Math.min(1200, Math.max(minW, candidate));
-      return w;
+      // Always fit pages by the viewport width for both portrait and landscape. This makes
+      // pages fill the entire available width, even if that means the page will be taller than
+      // the viewport in landscape. Users can scroll vertically to read the full page. The height
+      // constraint is not enforced here because users requested that the default view be full
+      // width on mobile landscape devices.
+      let width = vw;
+      // Respect a global maximum for very large screens to keep pages readable
+      width = Math.min(1200, width);
+      // Also enforce a reasonable minimum for extremely narrow viewports
+      width = Math.max(160, width);
+      return width;
     }
 
     // One-time width (fit viewport), then only on rotation / large viewport changes
@@ -405,9 +397,13 @@
         const w = computeFitWidth();
         setPageWidth(w);
         rerenderVisible();
+        // Reposition fixed UI elements to account for new viewport size
+        updateFixedPositions();
       } else if (scaleDelta > 0.02) {
         // Pinch — rerender visible with new effective DPR
         rerenderVisible();
+        // When the user pinches, ensure the topbar and progress bar remain correctly positioned and scaled
+        updateFixedPositions();
       }
     }
 
