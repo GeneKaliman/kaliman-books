@@ -128,39 +128,6 @@
     </div>
   </div>
 
-  <script>
-    // Dynamically adjust the "Читать онлайн" link based on device type. On mobile devices,
-    // readers will be directed to a scroll-friendly viewer; on desktop, the link
-    // remains on the standard HTML page. The device check uses several heuristics
-    // including UA client hints, the user-agent string, touch support and screen size.
-    document.addEventListener('DOMContentLoaded', function() {
-      const readLink = document.getElementById('onlineReadLink');
-      if (!readLink) return;
-      // Helper function to detect mobile devices reliably
-      function isMobileDevice() {
-        // Check the NavigatorUAData API if present
-        if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
-          return navigator.userAgentData.mobile;
-        }
-        const ua = (navigator.userAgent || navigator.vendor || window.opera || '').toLowerCase();
-        // Keywords that typically indicate a mobile device
-        if (/(android|iphone|ipad|ipod|blackberry|phone|mobile|iemobile|opera mini)/i.test(ua)) {
-          return true;
-        }
-        // Use touch capability combined with a smaller viewport as a fallback heuristic
-        const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-        const viewportMin = Math.min(window.innerWidth || document.documentElement.clientWidth, window.innerHeight || document.documentElement.clientHeight);
-        if (hasTouch && viewportMin < 800) {
-          return true;
-        }
-        return false;
-      }
-      const mobile = isMobileDevice();
-      // Choose appropriate page for reading based on device
-      readLink.href = mobile ? 'books/HistoryClimate/reader_browser_scrolling.html' : 'books/HistoryClimate/read.html';
-    });
-  </script>
-
   <!-- BOOK -->
   <div class="book-section">
     <div class="book-title">От каменного века до железного</div>
@@ -171,14 +138,44 @@
         </a>
       </div>
       <div class="links-vertical">
-        <!-- The online reading link will be rewritten at runtime based on device type -->
-        <a id="onlineReadLink" href="books/HistoryClimate/read.html">📖 Читать онлайн</a>
+        <!-- Clicking this link triggers device detection at click time to
+             choose the appropriate reader. The default href is left as # so
+             browsers don't navigate prematurely. -->
+        <a id="onlineReadLink" href="#" onclick="return handleReadClick(event)">📖 Читать онлайн</a>
         <a href="books/HistoryClimate/History_Climate.pdf" download>⬇️ Скачать книгу (PDF)</a>
         <a href="books/HistoryClimate/read.html#comments">💬 Оставить комментарий</a>
         <a href="books/HistoryClimate/Readme.html">ℹ️ Описание книги</a>
       </div>
     </div>
   </div>
+
+  <script>
+    // Handle the click on the online reading link. When activated, this function
+    // determines whether the device is mobile or desktop and directs the user
+    // to the appropriate reading interface. Detection occurs at click time to
+    // ensure it works regardless of script load order.
+    function handleReadClick(event) {
+      event = event || window.event;
+      if (event && event.preventDefault) event.preventDefault();
+      // Determine if we should treat the current device as mobile
+      var isMobile = false;
+      if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
+        isMobile = navigator.userAgentData.mobile;
+      } else if (window.matchMedia) {
+        // Touch-friendly pointer or a smaller screen qualifies as mobile
+        var coarse = window.matchMedia('(pointer: coarse)').matches;
+        var smallScreen = window.matchMedia('(max-width: 900px)').matches;
+        isMobile = coarse || smallScreen;
+      } else {
+        // Fallback to screen size
+        var w = Math.min(window.innerWidth || document.documentElement.clientWidth, window.innerHeight || document.documentElement.clientHeight);
+        isMobile = w < 900;
+      }
+      var target = isMobile ? 'books/HistoryClimate/reader_browser_scrolling.html' : 'books/HistoryClimate/read.html';
+      window.location.href = target;
+      return false;
+    }
+  </script>
 
 </body>
 </html>
