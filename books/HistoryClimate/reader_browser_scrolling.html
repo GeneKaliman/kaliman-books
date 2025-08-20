@@ -95,9 +95,12 @@
   <div class="topbar">
     <button id="menuBtn" class="btn">☰ Меню</button>
     <!-- Reset button allows the user to return to the default page layout after pinch‑zooming. -->
-    <button id="resetBtn" class="btn">↺ Reset</button>
+    <button id="resetBtn" class="btn">↺ перезагрузить</button>
+    <!-- Hidden page meta counter; retained for internal calculations -->
     <div class="meta" id="pageMeta">Стр. — / —</div>
     <div class="spacer"></div>
+    <!-- Button to return to the main page. Placed on the far right via the spacer. -->
+    <button id="homeBtn" class="btn">На главную</button>
   </div>
 
   <div class="pages" id="pages"></div>
@@ -131,6 +134,7 @@
     const spinner = document.getElementById('spinner');
     const topbarEl = document.querySelector('.topbar');
     const resetBtn = document.getElementById('resetBtn');
+    const homeBtn = document.getElementById('homeBtn');
 
     let pdfDoc = null, totalPages = 0;
     let dprBase = window.devicePixelRatio || 1;
@@ -234,6 +238,14 @@
           const el = document.querySelector('[data-page="' + currentPage + '"]');
           if (el) el.scrollIntoView({behavior: 'auto', block: 'start'});
         }, 60);
+      });
+    }
+
+    // Home button: navigate back to the main index when clicked. This uses a relative
+    // path to reach ../../index.html from the current document location.
+    if (homeBtn) {
+      homeBtn.addEventListener('click', () => {
+        window.location.href = '../../index.html';
       });
     }
     overlay.addEventListener('click', closeDrawer);
