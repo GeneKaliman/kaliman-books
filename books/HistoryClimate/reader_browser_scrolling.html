@@ -217,6 +217,25 @@
         const sheet = document.querySelector('[data-page="'+i+'"] .sheet');
         if (sheet) sheet.style.height = Math.round(baselineW * (meta.h / meta.w)) + 'px';
       }
+
+      // Ensure all existing canvases adopt the new baseline width. Without this, pages that
+      // were rendered before a rotation/resize retain their old width until rerendered, leading
+      // to inconsistent widths when scrolling. We update the CSS size immediately and mark
+      // them as needing rerender so the PDF draws at the correct resolution when next visible.
+      document.querySelectorAll('.page canvas').forEach((canvas) => {
+        // Set CSS width to the new baseline
+        canvas.style.width = baselineW + 'px';
+        // If we know the page meta, update CSS height to preserve aspect
+        const pg = canvas.parentElement && canvas.parentElement.parentElement;
+        const pageNumAttr = pg && pg.dataset.page;
+        const pageNum = pageNumAttr ? parseInt(pageNumAttr, 10) : null;
+        if (pageNum && pageMetaCache[pageNum]) {
+          const m = pageMetaCache[pageNum];
+          canvas.style.height = Math.round(baselineW * (m.h / m.w)) + 'px';
+        }
+        // Mark as not rendered so it will be rerendered with new size when in view
+        canvas.dataset.rendered = '0';
+      });
     }
 
     // Compute the optimal page width so that pages fit within both the horizontal and vertical
