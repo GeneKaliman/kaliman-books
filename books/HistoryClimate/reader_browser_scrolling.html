@@ -3,210 +3,489 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Браузерный ридер — надёжная загрузка</title>
+  <title>Браузерный ридер — История климата (pinch‑zoom)</title>
   <style>
-    :root{ --bg:#0b0b0c; --fg:#e7e7ea; --muted:#9aa0a6; --accent:#8ab4f8; --bar:rgba(0,0,0,.7); --pageW: 960px; }
-    *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-    html,body{ height:100%; overflow-x:auto; touch-action: pan-x pan-y pinch-zoom; overscroll-behavior: contain; }
-    body{ margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif; }
-    .topbar{ position:fixed; inset:0 0 auto 0; z-index:1000; display:flex; align-items:center; gap:10px;
-      padding: env(safe-area-inset-top) 10px 10px 10px; backdrop-filter: blur(6px); background:var(--bar);
-      pointer-events:auto; transform-origin:0 0; }
-    .btn{ border:0; border-radius:12px; padding:8px 12px; background:rgba(255,255,255,.06); color:var(--fg); font-size:16px; cursor:pointer; }
-    .btn:active{ background:rgba(255,255,255,.1); }
-    .spacer{ flex:1; }
-    .pages{ position:relative; width:100%; max-width:1200px; margin:0 auto; padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: 24px; }
-    .page{ margin:12px 0; width:100%; } .sheet{ width: var(--pageW); margin: 0 auto; }
-    .sheet canvas{ display:block; background:#fff; box-shadow: 0 6px 26px rgba(0,0,0,.36); }
-    .progress{ position:fixed; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.08); z-index:900; transform:translateY(-3px); transform-origin:0 100%; }
-    .progress > span{ display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
-    #spinner{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:2000; background:rgba(0,0,0,.5); color:var(--fg); font-size:16px; pointer-events:none; transition:opacity .3s; text-align:center; padding:0 12px;}
-    #spinner.hidden{ opacity:0; pointer-events:none; display:none; }
-    #spinner .icon{ width:48px; height:48px; border:4px solid rgba(255,255,255,.4); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:12px; }
-    #diag{ position:fixed; left:8px; bottom:8px; right:8px; background:#111; border:1px solid #333; color:#ddd; padding:8px 10px; font-size:12px; border-radius:8px; opacity:.9; }
-    @keyframes spin{ from{ transform:rotate(0deg);} to{ transform:rotate(360deg);} }
+    :root {
+      --bg: #0b0b0c;
+      --pagebg: #ffffff;
+      --fg: #e7e7ea;
+      --muted: #9aa0a6;
+      --accent: #8ab4f8;
+      --bar: rgba(0,0,0,0.7);
+      --bar-blur: blur(6px);
+      --pageW: 960px; /* updated at runtime for rotation/large changes only */
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /*
+      Allow both horizontal and vertical scrolling when the user pinch‑zooms. Previously we set
+      overflow-x to hidden and limited touch-action to pan-y, which prevented panning horizontally
+      after zooming in. By letting overflow-x be auto and enabling pan-x as well, users can freely
+      drag the enlarged page in any direction. Pinch‑zoom remains enabled.
+    */
+    html, body { height: 100%; overflow-x: auto; touch-action: pan-x pan-y pinch-zoom; overscroll-behavior: contain; }
+    body { margin: 0; background: var(--bg); color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif; }
+    .topbar {
+      position: fixed; left: 0; right: 0; top: 0; z-index: 1000;
+      display: flex; align-items: center; gap: 12px;
+      padding: env(safe-area-inset-top) 12px 12px 12px;
+      backdrop-filter: var(--bar-blur); background: var(--bar);
+    }
+    .btn { border: 0; border-radius: 12px; padding: 8px 12px; background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px; cursor: pointer; }
+    .btn:active { background: rgba(255,255,255,0.1); }
+    .meta { font-size: 13px; color: var(--muted); } .spacer { flex: 1; }
+
+    .pages { position: relative; width: 100%; max-width: 1200px; margin: 0 auto;
+      padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: 24px; }
+    .page { display: grid; place-items: center; margin: 12px auto; width: 100%; position: relative; }
+    .sheet { width: var(--pageW); }
+    .sheet canvas { display: block; background: var(--pagebg); box-shadow: 0 6px 26px rgba(0,0,0,0.36); }
+    .pnum { margin-top: 6px; font-size: 12px; color: var(--muted); user-select: none; /* Hide page numbers below each page */ display: none; }
+
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1200; opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .overlay.show { opacity: 1; pointer-events: auto; }
+    .drawer { position: fixed; top: 0; bottom: 0; right: 0; width: min(88vw, 380px);
+      z-index: 1300; background: #121316; border-left: 1px solid #202124; transform: translateX(100%); transition: transform .25s; display: flex; flex-direction: column; }
+    .drawer.open { transform: translateX(0); }
+    .drawer header { padding: 16px; border-bottom: 1px solid #202124; font-weight: 600; }
+    .drawer .toc { flex: 1; overflow: auto; padding: 6px 8px 16px 8px; }
+    .toc button { width: 100%; text-align: left; padding: 10px 12px; margin: 6px 4px; background: transparent; color: var(--fg);
+      border: 1px solid #202124; border-radius: 10px; font-size: 15px; cursor: pointer; }
+
+    .progress { position: fixed; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,0.08); z-index: 900; transform: translateY(-3px); }
+    .progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+    /* Hide the page counter in the top bar. The reader now hides the
+       “Стр. x / y” indicator entirely. */
+    #pageMeta { display: none; }
+
+    /* Loading spinner overlay shown while the PDF is being prepared. It covers the entire viewport
+       and prevents interaction until at least the first page is rendered. */
+    #spinner {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      background: rgba(0,0,0,0.5);
+      color: var(--fg);
+      font-size: 16px;
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+    #spinner.hidden { opacity: 0; pointer-events: none; display: none; }
+    #spinner .icon {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(255,255,255,0.4);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 12px;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
-  <div class="topbar" id="topbar">
+  <div class="topbar">
     <button id="menuBtn" class="btn">☰ Меню</button>
+    <!-- Reset button allows the user to return to the default page layout after pinch‑zooming. -->
+    <button id="resetBtn" class="btn">↺ Reset</button>
+    <div class="meta" id="pageMeta">Стр. — / —</div>
     <div class="spacer"></div>
-    <button id="resetFit" class="btn" title="Сброс под текущую ориентацию">Сброс</button>
   </div>
 
   <div class="pages" id="pages"></div>
-  <div class="progress" id="progress"><span id="progressBar"></span></div>
+  <div class="progress"><span id="progressBar"></span></div>
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="drawer">
+    <header>Содержание<div class="meta">Коснитесь главы для перехода</div></header>
+    <div class="toc" id="tocList"></div>
+  </aside>
 
-  <div id="spinner"><div class="icon"></div><div id="spinText">Пожалуйста, подождите…</div></div>
-  <div id="diag">Диагностика: инициализация…</div>
+    <!-- Spinner overlay displayed while waiting for the PDF to load/render -->
+    <div id="spinner">
+      <div class="icon"></div>
+      <div>Пожалуйста, подождите…</div>
+    </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js"></script>
   <script>
-  // ------------------ Robust loader ------------------
-  const PDF_CANDIDATES = [
-    './History_Climate.pdf',
-    './HistoryClimate.pdf',
-    './history_climate.pdf',
-    './History_Climate.PDF',
-    './HistoryClimate.PDF'
-  ];
-  const CDNS = [
-    { core:'https://unpkg.com/pdfjs-dist@4.4.168/build/pdf.min.js', worker:'https://unpkg.com/pdfjs-dist@4.4.168/build/pdf.worker.min.js' },
-    { core:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.js', worker:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.js' },
-    { core:'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.js', worker:'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.js' }
-  ];
-  const diag = (m)=>{ document.getElementById('diag').textContent = 'Диагностика: ' + m; };
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';
 
-  (async function boot(){
-    // 1) Find a working CDN pair and set workerSrc explicitly
-    let okCdn = null;
-    for (const c of CDNS){
-      try{
-        await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=c.core; s.async=true; s.crossOrigin='anonymous'; s.onload=()=>res(); s.onerror=()=>rej(new Error('core failed')); document.head.appendChild(s); });
-        if (!window.pdfjsLib) throw new Error('pdfjsLib missing after core');
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = c.worker; // explicit worker path
-        // quick probe worker fetch
-        await fetch(c.worker, {mode:'no-cors'}).catch(()=>{});
-        okCdn = c; diag('pdf.js загружен: '+c.core); break;
-      }catch(e){ diag('Не удалось загрузить pdf.js с '+c.core+' — '+e.message); }
+    const PDF_URL = 'History_Climate.pdf';
+    const pagesEl = document.getElementById('pages');
+    const pageMetaEl = document.getElementById('pageMeta');
+    const progressBar = document.getElementById('progressBar');
+    const menuBtn = document.getElementById('menuBtn');
+    const drawer = document.getElementById('drawer');
+    const overlay = document.getElementById('overlay');
+    const tocList = document.getElementById('tocList');
+    const spinner = document.getElementById('spinner');
+    const topbarEl = document.querySelector('.topbar');
+    const resetBtn = document.getElementById('resetBtn');
+
+    let pdfDoc = null, totalPages = 0;
+    let dprBase = window.devicePixelRatio || 1;
+    let vvScale = (window.visualViewport && window.visualViewport.scale) || 1;
+    let pageMetaCache = {}; // pageNum -> {w,h,page}
+    let renderTasks = {};   // pageNum -> renderTask
+    let resizeTimer = null;
+    let baselineW = 960;    // CSS width of a page (doesn't change during pinch)
+    let lastVVW = 0, lastScale = vvScale;
+
+    // Default page aspect ratio (width/height) used to fit pages on screen before meta is available.
+    let pageAspect = 0.707;
+
+    // Control visibility of the top bar and progress bar. Toggling allows readers to hide
+    // chrome during reading and reveal it again with a tap. The bars are visible by default.
+    let menuVisible = true;
+    function setBarsVisibility(show) {
+      menuVisible = show;
+      if (topbarEl) topbarEl.style.display = show ? 'flex' : 'none';
+      const progressEl = document.querySelector('.progress');
+      if (progressEl) progressEl.style.display = show ? 'block' : 'none';
     }
-    if (!okCdn){ diag('Все CDN отклонены. Разрешите загрузку скриптов (unpkg/cdnjs/jsdelivr) или используйте локальный pdf.min.js.'); document.getElementById('spinText').textContent='pdf.js не загружен.'; return; }
-
-    // 2) Find the PDF via GET (HEAD sometimes blocked)
-    let pdfUrl = null, lastErr='';
-    for (const u of PDF_CANDIDATES){
-      try{
-        const r = await fetch(u, {cache:'no-store'});
-        if (r.ok){ pdfUrl = u; diag('PDF найден: '+u); break; }
-        lastErr = 'HTTP '+r.status+' '+u;
-      }catch(e){ lastErr = e.message+' '+u; }
+    function toggleBars() {
+      setBarsVisibility(!menuVisible);
     }
-    if (!pdfUrl){ diag('PDF не найден: '+lastErr); document.getElementById('spinText').textContent='Не удалось найти PDF. Положите файл рядом с HTML и назовите '+PDF_CANDIDATES.join(', '); return; }
 
-    // 3) Start viewer
-    startViewer(pdfUrl);
-  })();
-
-  // ------------------ Viewer (fast pipeline) ------------------
-  const pagesEl = document.getElementById('pages');
-  const spinner = document.getElementById('spinner');
-  const spinText = document.getElementById('spinText');
-  const progressBar = document.getElementById('progressBar');
-  const resetFitBtn = document.getElementById('resetFit');
-  const topbarEl = document.getElementById('topbar');
-  let pdfDoc=null,totalPages=0,baselineW=960,lastVVW=0,lastScale=1;
-  let pageMetaCache={},renderTasks={},vvScale=1,pageAspect=0.707,menuVisible=true;
-
-  function getVVWidth(){ return Math.floor((window.visualViewport && window.visualViewport.width) || document.documentElement.clientWidth); }
-  function getVVHeight(){ return Math.floor((window.visualViewport && window.visualViewport.height) || window.innerHeight); }
-  function effectiveDPR(){ vvScale = (window.visualViewport && window.visualViewport.scale) || 1; return (window.devicePixelRatio || 1) * (vvScale || 1); }
-  function setPageWidth(w){
-    baselineW = Math.round(w);
-    document.documentElement.style.setProperty('--pageW', baselineW + 'px');
-    document.querySelectorAll('.page .sheet canvas').forEach((cv)=>{
-      const pn = parseInt(cv.id.replace('p',''),10);
-      const meta = pageMetaCache[pn];
-      const cssH = meta ? Math.round(baselineW * (meta.h/meta.w)) : Math.round(baselineW / (pageAspect||0.707));
-      cv.style.width = baselineW + 'px';
-      cv.style.height = cssH + 'px';
-      cv.dataset.rendered = '0';
-    });
-  }
-  function computeFitWidth(){
-    const vw = getVVWidth(), vh = getVVHeight();
-    const topH = topbarEl ? topbarEl.offsetHeight : 0, bottomMargin = 80;
-    const widthPortrait = vw;
-    const widthLandscape = Math.min(vw, Math.max(160, (vh - topH - bottomMargin) * (pageAspect || 0.707)));
-    return Math.min(1200, Math.max(160, (vh >= vw) ? widthPortrait : widthLandscape));
-  }
-  function updateFixedPositions(){
-    const vv = window.visualViewport; if (!vv) return;
-    const x = vv.offsetLeft||0, y = vv.offsetTop||0, scale = vv.scale||1;
-    topbarEl.style.transform = `translate(${x}px, ${y}px) scale(${1/scale})`;
-    document.getElementById('progress').style.transform = `translate(${x}px, -3px) scale(${1/scale})`;
-  }
-  function rerenderVisible(){
-    const pages = document.querySelectorAll('.page'); const vh = window.innerHeight;
-    pages.forEach(p=>{ const r = p.getBoundingClientRect(); const near = r.top < vh*2 && r.bottom > -vh*1;
-      if (near){ const n = parseInt(p.dataset.page,10); const c = p.querySelector('canvas'); c.dataset.rendered='0'; renderPage(n,c); } });
-  }
-  function onVVChange(){
-    const vv = window.visualViewport; const nowW = vv ? vv.width : document.documentElement.clientWidth;
-    const nowScale = vv ? vv.scale : 1; const widthDelta = Math.abs(nowW - lastVVW); const scaleDelta = Math.abs((nowScale||1)-(lastScale||1));
-    lastVVW = nowW; lastScale = nowScale;
-    if (widthDelta > 120){ setPageWidth(computeFitWidth()); rerenderVisible(); updateFixedPositions(); }
-    else if (scaleDelta > 0.02){ rerenderVisible(); updateFixedPositions(); }
-  }
-  if (window.visualViewport){
-    const schedule = (()=>{ let raf=0; return ()=>{ if (raf) return; raf=requestAnimationFrame(()=>{ raf=0; onVVChange(); }); }; })();
-    window.visualViewport.addEventListener('resize', schedule);
-    window.visualViewport.addEventListener('scroll', schedule);
-    window.visualViewport.addEventListener('resize', updateFixedPositions);
-    window.visualViewport.addEventListener('scroll', updateFixedPositions);
-    updateFixedPositions();
-  }else{
-    window.addEventListener('resize', ()=>{ clearTimeout(window.__rt); window.__rt = setTimeout(onVVChange, 80); });
-  }
-  window.addEventListener('orientationchange', ()=> setTimeout(onVVChange, 220));
-  resetFitBtn.addEventListener('click', ()=>{ setPageWidth(computeFitWidth()); rerenderVisible(); window.scrollTo({top:0,behavior:'smooth'}); });
-  pagesEl.addEventListener('click', (e)=>{ if (topbarEl.contains(e.target)) return; const show = topbarEl.style.display !== 'flex'; topbarEl.style.display = show?'flex':'none'; document.getElementById('progress').style.display = show?'block':'none'; });
-
-  async function startViewer(pdfUrl){
-    try{
-      // Try a simple GET first to surface HTTP errors in our diagnostics
-      const probe = await fetch(pdfUrl, {cache:'no-store'});
-      if (!probe.ok) throw new Error('HTTP '+probe.status+' для '+pdfUrl);
-    }catch(e){
-      document.getElementById('spinText').textContent = 'PDF доступен, но не читается: '+e.message;
-      // Proceed anyway—pdf.js may still handle it if CORS is fine.
-    }
-    try{
-      pdfDoc = await pdfjsLib.getDocument({ url: pdfUrl }).promise;
-      const n = pdfDoc.numPages; const frag = document.createDocumentFragment();
-      for (let i=1;i<=n;i++){ const holder=document.createElement('div'); holder.className='page'; holder.dataset.page=String(i);
-        const sheet=document.createElement('div'); sheet.className='sheet'; const canvas=document.createElement('canvas'); canvas.id='p'+i;
-        sheet.appendChild(canvas); holder.appendChild(sheet); frag.appendChild(holder); }
-      pagesEl.appendChild(frag);
-      const page1 = await ensureMeta(1); // determine precise aspect
-      pageAspect = page1.w / page1.h; setPageWidth(computeFitWidth());
-      observeAndRender();
-      setTimeout(()=>{ if(!spinner.classList.contains('hidden')){ document.getElementById('spinText').textContent='Долго загружается…'; } }, 5000);
-    }catch(err){
-      document.getElementById('spinText').textContent = 'Ошибка инициализации pdf.js: '+err.message;
-    }
-  }
-  let metaCache={};
-  async function ensureMeta(i){ if (metaCache[i]) return metaCache[i]; const p = await pdfDoc.getPage(i); const vp = p.getViewport({scale:1}); return metaCache[i] = {w:vp.width,h:vp.height,page:p}; }
-  let io=null;
-  function observeAndRender(){
-    if (io) io.disconnect();
-    io = new IntersectionObserver(async (entries)=>{
-      for (const e of entries){
-        if (!e.isIntersecting) continue;
-        const n = parseInt(e.target.dataset.page,10);
-        const c = e.target.querySelector('canvas');
-        if (c.dataset.rendering==='1' || c.dataset.rendered==='1') continue;
-        await render(n,c);
+    /**
+     * Maintain fixed elements (topbar, progress bar) visible when the user pinch‑zooms and pans.
+     * On mobile browsers, position:fixed elements do not automatically follow the visual viewport
+     * when it is offset due to zooming. This helper applies a transform to keep them in view.
+     */
+    function updateFixedPositions() {
+      const vv = window.visualViewport;
+      if (!vv || !topbarEl) return;
+      const x = vv.offsetLeft || 0;
+      const y = vv.offsetTop || 0;
+      // Compute inverse scale to keep UI size constant when pinch‑zooming
+      const scale = vv.scale || 1;
+      // Shift the fixed bars so they stay pinned to the visible area when zoomed and panned
+      // and apply inverse scaling to counteract page zoom.
+      topbarEl.style.transformOrigin = '0 0';
+      topbarEl.style.transform = `translate(${x}px, ${y}px) scale(${1/scale})`;
+      // Align progress bar horizontally and apply the same inverse scaling. Preserve vertical offset (-3px).
+      const progressBarEl = document.querySelector('.progress');
+      if (progressBarEl) {
+        progressBarEl.style.transformOrigin = '0 0';
+        progressBarEl.style.transform = `translate(${x}px, -3px) scale(${1/scale})`;
       }
-    }, {root:null, rootMargin:'1800px 0px', threshold:0.01});
-    document.querySelectorAll('.page').forEach(p=> io.observe(p));
-  }
-  async function render(n, canvas){
-    const m = await ensureMeta(n); const cssW=baselineW, cssH=Math.round(cssW*(m.h/m.w));
-    const eff = (window.devicePixelRatio||1) * ((window.visualViewport && window.visualViewport.scale)||1);
-    const pxW = Math.floor(cssW*eff), pxH = Math.floor(cssH*eff);
-    if (canvas.width!==pxW || canvas.height!==pxH){ canvas.width=pxW; canvas.height=pxH; }
-    canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
-    const ctx = canvas.getContext('2d', {alpha:false}); ctx.save(); ctx.fillStyle='#fff'; ctx.fillRect(0,0,pxW,pxH); ctx.restore();
-    const vp = m.page.getViewport({ scale: cssW / m.w });
-    canvas.dataset.rendering='1'; canvas.dataset.rendered='0';
-    const task = m.page.render({ canvasContext: ctx, viewport: vp, transform: eff!==1 ? [eff,0,0,eff,0,0] : null });
-    try{ await task.promise; canvas.dataset.rendered='1'; if (!spinner.classList.contains('hidden')) spinner.classList.add('hidden'); } finally { canvas.dataset.rendering='0'; }
-    updateProgress();
-  }
-  function updateProgress(){ const scrollY=window.scrollY||document.documentElement.scrollTop||0;
-    const full=document.documentElement.scrollHeight - window.innerHeight; const percent=full>0?Math.max(0,Math.min(100,Math.round(scrollY/full*100))):0;
-    progressBar.style.width = percent + '%'; }
-  window.addEventListener('scroll', updateProgress, {passive:true});
+    }
+
+    // --- Hard-coded TOC ---
+    const tocEntries = [
+      { title: 'Введение', page: 2 },
+      { title: 'Глава 1. Климат и история', page: 4 },
+      { title: 'Глава 2. Эти таинственные шумеры', page: 36 },
+      { title: 'Глава 3. Убейдцы и шумеры', page: 70 },
+      { title: 'Глава 4. Конец периода Джемдет-Наср.', page: 109 },
+      { title: 'Глава 5. Войны номов', page: 131 },
+      { title: 'Глава 6. Расцвет и гибель Аккадского царства', page: 149 },
+      { title: 'Глава 7. Возвышение Ура и появление амореев', page: 165 },
+      { title: 'Глава 8. Ближний Восток в ХVI-ХIV веках до н. э.', page: 192 },
+      { title: 'Глава 9. Коллапс бронзового века', page: 217 },
+      { title: 'Глава 10. Современные изменения климата', page: 253 }
+    ];
+    tocEntries.forEach(ent => {
+      const b = document.createElement('button'); b.textContent = ent.title;
+      b.addEventListener('click', () => { const t = document.querySelector('[data-page="' + ent.page + '"]'); if (t) t.scrollIntoView({behavior:'smooth', block:'start'}); closeDrawer(); });
+      tocList.appendChild(b);
+    });
+
+    // --- Menu ---
+    function openDrawer() { overlay.classList.add('show'); drawer.classList.add('open'); }
+    function closeDrawer() { overlay.classList.remove('show'); drawer.classList.remove('open'); }
+    menuBtn.addEventListener('click', () => (drawer.classList.contains('open') ? closeDrawer() : openDrawer()));
+    // Reset button: when clicked, restore the page width to its default fit based
+    // on the current device orientation and rerender pages for crisp output. This
+    // acts as a "reset" after the user has pinch‑zoomed.
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        // Compute appropriate width for current orientation and update all pages
+        const w = computeFitWidth();
+        setPageWidth(w);
+        // Rerender currently visible pages so they adopt the new dimensions
+        rerenderVisible();
+        // Ensure fixed UI elements (top bar, progress bar) are realigned
+        updateFixedPositions();
+      });
+    }
+    overlay.addEventListener('click', closeDrawer);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+    function getVVWidth() {
+      return Math.floor((window.visualViewport && window.visualViewport.width) || document.documentElement.clientWidth);
+    }
+    function getVVHeight() {
+      return Math.floor((window.visualViewport && window.visualViewport.height) || document.documentElement.clientHeight);
+    }
+    function setPageWidth(w) {
+      baselineW = Math.round(w);
+      document.documentElement.style.setProperty('--pageW', baselineW + 'px');
+      // update skeletons if metas known
+      for (let i = 1; i <= totalPages; i++) {
+        const meta = pageMetaCache[i];
+        if (!meta) continue;
+        const sheet = document.querySelector('[data-page="'+i+'"] .sheet');
+        if (sheet) sheet.style.height = Math.round(baselineW * (meta.h / meta.w)) + 'px';
+      }
+
+      // Ensure all existing canvases adopt the new baseline width. Without this, pages that
+      // were rendered before a rotation/resize retain their old width until rerendered, leading
+      // to inconsistent widths when scrolling. We update the CSS size immediately and mark
+      // them as needing rerender so the PDF draws at the correct resolution when next visible.
+      document.querySelectorAll('.page canvas').forEach((canvas) => {
+        // Set CSS width to the new baseline
+        canvas.style.width = baselineW + 'px';
+        // If we know the page meta, update CSS height to preserve aspect
+        const pg = canvas.parentElement && canvas.parentElement.parentElement;
+        const pageNumAttr = pg && pg.dataset.page;
+        const pageNum = pageNumAttr ? parseInt(pageNumAttr, 10) : null;
+        if (pageNum && pageMetaCache[pageNum]) {
+          const m = pageMetaCache[pageNum];
+          canvas.style.height = Math.round(baselineW * (m.h / m.w)) + 'px';
+        }
+        // Mark as not rendered so it will be rerendered with new size when in view
+        canvas.dataset.rendered = '0';
+      });
+    }
+
+    // Compute the optimal page width so that pages fit within both the horizontal and vertical
+    // dimensions of the viewport. This prevents pages from being cropped when the device is
+    // in landscape orientation. Uses the aspect ratio of the first page if available.
+    function computeFitWidth() {
+      const vw = getVVWidth();
+      const vh = getVVHeight();
+      // Height available for the page: subtract top bar and some bottom margin (progress bar, safe area)
+      const topbarNode = document.querySelector('.topbar');
+      const topBarH = topbarNode ? topbarNode.offsetHeight : 0;
+      const bottomMargin = 80; // enough space for progress bar and OS nav bars
+      const availH = Math.max(0, vh - topBarH - bottomMargin);
+      // Always fit pages by the viewport width for both portrait and landscape. This makes
+      // pages fill the entire available width, even if that means the page will be taller than
+      // the viewport in landscape. Users can scroll vertically to read the full page. The height
+      // constraint is not enforced here because users requested that the default view be full
+      // width on mobile landscape devices.
+      let width = vw;
+      // Respect a global maximum for very large screens to keep pages readable
+      width = Math.min(1200, width);
+      // Also enforce a reasonable minimum for extremely narrow viewports
+      width = Math.max(160, width);
+      return width;
+    }
+
+    // One-time width (fit viewport), then only on rotation / large viewport changes
+    function snapshotWidth() {
+      // When the document loads, choose a width that fits both the width and height constraints
+      const w = computeFitWidth();
+      lastVVW = getVVWidth();
+      setPageWidth(w);
+    }
+    snapshotWidth();
+
+    // --- PDF bootstrap ---
+    pdfjsLib.getDocument(PDF_URL).promise.then(async pdf => {
+      pdfDoc = pdf; totalPages = pdf.numPages;
+
+      // Build DOM
+      for (let i = 1; i <= totalPages; i++) {
+        const holder = document.createElement('div'); holder.className = 'page'; holder.dataset.page = String(i);
+        const sheet = document.createElement('div'); sheet.className = 'sheet';
+        const canvas = document.createElement('canvas'); canvas.id = 'p' + i; sheet.appendChild(canvas);
+        holder.appendChild(sheet);
+        const caption = document.createElement('div'); caption.className = 'pnum'; caption.textContent = 'Страница ' + i; holder.appendChild(caption);
+        pagesEl.appendChild(holder);
+      }
+
+      await preflightMetas(); // set skeleton heights
+      observeAndRender();
+      updateProgress(); updateMetaFromViewport();
+      // After the DOM is ready and before rendering pages, update the aspect ratio using
+      // the first page meta so landscape fitting uses correct proportions
+      if (pageMetaCache[1]) {
+        const meta = pageMetaCache[1];
+        if (meta && meta.h && meta.w) {
+          pageAspect = meta.w / meta.h;
+        }
+      }
+      // Recompute width with the new aspect if necessary
+      setPageWidth(computeFitWidth());
+      // Attach tap handler to toggle the visibility of the top bar and progress bar during reading
+      pagesEl.addEventListener('click', (e) => {
+        // Ignore clicks on the drawer or the topbar itself
+        if (drawer.contains(e.target) || topbarEl.contains(e.target)) return;
+        toggleBars();
+      });
+    }).catch(err => console.error('PDF load error:', err));
+
+    async function preflightMetas() {
+      for (let i = 1; i <= (pdfDoc ? pdfDoc.numPages : 0); i++) {
+        if (!pageMetaCache[i]) {
+          const meta = await ensurePageMeta(i);
+          const sheet = document.querySelector('[data-page="'+i+'"] .sheet');
+          if (sheet) sheet.style.height = Math.round(baselineW * (meta.h / meta.w)) + 'px';
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+    }
+
+    let io = null;
+    function observeAndRender() {
+      if (io) io.disconnect();
+      io = new IntersectionObserver(async (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const pageIndex = parseInt(entry.target.dataset.page, 10);
+          const canvas = entry.target.querySelector('canvas');
+          if (canvas.dataset.rendered === '1' || canvas.dataset.rendering === '1') continue;
+          await renderPage(pageIndex, canvas);
+        }
+      }, { root: null, rootMargin: '1800px 0px', threshold: 0.01 });
+      document.querySelectorAll('.page').forEach(p => io.observe(p));
+    }
+
+    async function ensurePageMeta(pageNum) {
+      if (pageMetaCache[pageNum]) return pageMetaCache[pageNum];
+      const page = await pdfDoc.getPage(pageNum);
+      const vp = page.getViewport({ scale: 1 });
+      const meta = { w: vp.width, h: vp.height, page: page };
+      pageMetaCache[pageNum] = meta;
+      // Update global aspect ratio when the first page meta is known
+      if (pageNum === 1) {
+        pageAspect = meta.w / meta.h;
+      }
+      return meta;
+    }
+
+    function effectiveDPR() {
+      vvScale = (window.visualViewport && window.visualViewport.scale) || 1;
+      return (window.devicePixelRatio || 1) * (vvScale || 1);
+    }
+
+    async function renderPage(pageNum, canvas) {
+      const meta = await ensurePageMeta(pageNum);
+      const cssW = baselineW;
+      const cssH = Math.round(cssW * (meta.h / meta.w));
+      const eff = effectiveDPR();
+      const pxW = Math.floor(cssW * eff);
+      const pxH = Math.floor(cssH * eff);
+
+      if (renderTasks[pageNum]) { try { renderTasks[pageNum].cancel(); } catch(e) {} }
+
+      if (canvas.width !== pxW || canvas.height !== pxH) { canvas.width = pxW; canvas.height = pxH; }
+      canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.save(); ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore();
+
+      const viewport = meta.page.getViewport({ scale: cssW / meta.w });
+      canvas.dataset.rendering = '1'; canvas.dataset.rendered = '0';
+      const task = meta.page.render({ canvasContext: ctx, viewport, transform: eff !== 1 ? [eff,0,0,eff,0,0] : null });
+      renderTasks[pageNum] = task;
+
+      try { await task.promise; canvas.dataset.rendered = '1'; }
+      catch(e){ console.warn('Render error p'+pageNum, e && e.message); }
+      finally { canvas.dataset.rendering = '0'; if (renderTasks[pageNum] === task) delete renderTasks[pageNum]; }
+
+      // Hide the loading spinner once the first page has been rendered
+      if (pageNum === 1 && spinner && !spinner.classList.contains('hidden')) {
+        spinner.classList.add('hidden');
+      }
+
+      updateProgress(); updateMetaFromViewport();
+    }
+
+    function rerenderVisible() {
+      const pages = document.querySelectorAll('.page');
+      const vh = window.innerHeight;
+      pages.forEach(p => {
+        const r = p.getBoundingClientRect();
+        const near = r.top < vh*2 && r.bottom > -vh*1;
+        if (near) {
+          const pageNum = parseInt(p.dataset.page, 10);
+          const canvas = p.querySelector('canvas');
+          canvas.dataset.rendered = '0';
+          renderPage(pageNum, canvas);
+        }
+      });
+    }
+
+    // Handle viewport changes:
+    // - If width changed a lot => rotation/layout change: refit CSS width & skeletons
+    // - If scale changed (pinch) => keep CSS width; just rerender visible pages at higher/lower DPR for crispness
+    function onVVChange() {
+      const vv = window.visualViewport;
+      const nowW = vv ? vv.width : document.documentElement.clientWidth;
+      const nowScale = vv ? vv.scale : 1;
+      const widthDelta = Math.abs(nowW - lastVVW);
+      const scaleDelta = Math.abs((nowScale || 1) - (lastScale || 1));
+
+      lastVVW = nowW; lastScale = nowScale;
+
+      if (widthDelta > 120) {
+        // Orientation or big chrome change — refit page width
+        // Determine optimal width considering the current viewport height and page aspect ratio
+        const w = computeFitWidth();
+        setPageWidth(w);
+        rerenderVisible();
+        // Reposition fixed UI elements to account for new viewport size
+        updateFixedPositions();
+      } else if (scaleDelta > 0.02) {
+        // Pinch — rerender visible with new effective DPR
+        rerenderVisible();
+        // When the user pinches, ensure the topbar and progress bar remain correctly positioned and scaled
+        updateFixedPositions();
+      }
+    }
+
+    if (window.visualViewport) {
+      const schedule = (() => {
+        let raf = 0;
+        return () => {
+          if (raf) return;
+          raf = requestAnimationFrame(() => { raf = 0; onVVChange(); });
+        };
+      })();
+      window.visualViewport.addEventListener('resize', schedule);
+      window.visualViewport.addEventListener('scroll', schedule); // panning while zoomed
+      // Also reposition fixed UI elements when zoom/pan occurs
+      window.visualViewport.addEventListener('resize', updateFixedPositions);
+      window.visualViewport.addEventListener('scroll', updateFixedPositions);
+      // Initial positioning in case the page loads while zoomed
+      updateFixedPositions();
+    } else {
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer); resizeTimer = setTimeout(onVVChange, 80);
+      });
+    }
+    window.addEventListener('orientationchange', () => { setTimeout(onVVChange, 220); });
+
+    function updateProgress() {
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      const full = document.documentElement.scrollHeight - window.innerHeight;
+      const percent = full > 0 ? Math.max(0, Math.min(100, Math.round(scrollY / full * 100))) : 0;
+      progressBar.style.width = percent + '%';
+    }
+    function updateMetaFromViewport() {
+      const pages = document.querySelectorAll('.page');
+      let bestPage = 1, bestDist = Infinity;
+      pages.forEach(p => {
+        const r = p.getBoundingClientRect();
+        const dist = Math.abs(r.top - 0);
+        if (dist < bestDist) { bestDist = dist; bestPage = parseInt(p.dataset.page, 10); }
+      });
+      pageMetaEl.textContent = 'Стр. ' + bestPage + ' / ' + totalPages;
+    }
+    window.addEventListener('scroll', () => { updateProgress(); updateMetaFromViewport(); }, {passive:true});
   </script>
 </body>
 </html>
