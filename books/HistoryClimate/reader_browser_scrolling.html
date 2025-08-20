@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Браузерный ридер — История климата</title>
+  <title>Браузерный ридер — История климата (fast)</title>
   <style>
     :root{
       --bg:#0b0b0c; --fg:#e7e7ea; --muted:#9aa0a6; --accent:#8ab4f8; --bar:rgba(0,0,0,.7);
@@ -19,8 +19,7 @@
       display:flex; align-items:center; gap:10px;
       padding: env(safe-area-inset-top) 10px 10px 10px;
       backdrop-filter: blur(6px); background:var(--bar);
-      pointer-events:auto; /* stay clickable during transforms */
-      transform-origin: 0 0; /* we will translate+scale with visualViewport */
+      pointer-events:auto; transform-origin:0 0;
     }
     .btn{ border:0; border-radius:12px; padding:8px 12px; background:rgba(255,255,255,.06); color:var(--fg); font-size:16px; cursor:pointer; }
     .btn:active{ background:rgba(255,255,255,.1); }
@@ -28,11 +27,9 @@
 
     .pages{ position:relative; width:100%; max-width:1200px; margin:0 auto;
       padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: 24px; }
-    .page{ margin:12px 0; width:100%; } /* uniform L/R margins */
-    .sheet{ width: var(--pageW); margin: 0 auto; } /* center the page itself */
+    .page{ margin:12px 0; width:100%; }
+    .sheet{ width: var(--pageW); margin: 0 auto; }
     .sheet canvas{ display:block; background:#fff; box-shadow: 0 6px 26px rgba(0,0,0,.36); }
-
-    /* We removed top page number and between-page numbers: no .meta counter, no .pnum */
 
     .overlay{ position:fixed; inset:0; background:rgba(0,0,0,.35);
       z-index:1200; opacity:0; pointer-events:none; transition:opacity .2s; }
@@ -51,7 +48,7 @@
     .progress > span{ display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
 
     #spinner{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-      z-index:2000; background:rgba(0,0,0,.5); color:var(--fg); font-size:16px; pointer-events:none; transition:opacity .3s; }
+      z-index:2000; background:rgba(0,0,0,.5); color:var(--fg); font-size:16px; pointer-events:none; transition:opacity .3s; text-align:center; padding:0 12px;}
     #spinner.hidden{ opacity:0; pointer-events:none; display:none; }
     #spinner .icon{ width:48px; height:48px; border:4px solid rgba(255,255,255,.4); border-top-color:var(--accent);
       border-radius:50%; animation:spin 1s linear infinite; margin-bottom:12px; }
@@ -74,34 +71,26 @@
     <div class="toc" id="tocList"></div>
   </aside>
 
-  <div id="spinner"><div class="icon"></div>Пожалуйста, подождите…</div>
+  <div id="spinner"><div class="icon"></div><div id="spinText">Пожалуйста, подождите…</div></div>
 
-  <!-- pdf.js -->
   <script src="https://unpkg.com/pdfjs-dist@4.4.168/build/pdf.min.js"></script>
   <script>
-    // ---------- Config ----------
     const PDF_URL = './History_Climate.pdf';
 
-    // ---------- Elements ----------
     const pagesEl = document.getElementById('pages');
     const menuBtn = document.getElementById('menuBtn');
     const drawer = document.getElementById('drawer');
     const overlay = document.getElementById('overlay');
     const spinner = document.getElementById('spinner');
+    const spinText = document.getElementById('spinText');
     const progressBar = document.getElementById('progressBar');
     const resetFitBtn = document.getElementById('resetFit');
     const topbarEl = document.getElementById('topbar');
 
-    // ---------- State ----------
-    let pdfDoc = null, totalPages = 0;
-    let baselineW = 960, lastVVW = 0, lastScale = 1;
-    let pageMetaCache = {}; // { [pageNum]: {w,h,page} }
-    let renderTasks = {};
-    let vvScale = 1;
-    let pageAspect = 0.707; // updated with first page meta
-    let menuVisible = true;
+    let pdfDoc=null,totalPages=0,baselineW=960,lastVVW=0,lastScale=1;
+    let pageMetaCache={},renderTasks={},vvScale=1,pageAspect=0.707,menuVisible=true;
+    let firstRenderTimer=null;
 
-    // ---------- Helpers ----------
     function getVVWidth(){ return Math.floor((window.visualViewport && window.visualViewport.width) || document.documentElement.clientWidth); }
     function getVVHeight(){ return Math.floor((window.visualViewport && window.visualViewport.height) || window.innerHeight); }
     function effectiveDPR(){ vvScale = (window.visualViewport && window.visualViewport.scale) || 1; return (window.devicePixelRatio || 1) * (vvScale || 1); }
@@ -109,14 +98,13 @@
     function setPageWidth(w){
       baselineW = Math.round(w);
       document.documentElement.style.setProperty('--pageW', baselineW + 'px');
-      // update any already-in-DOM canvases to the new CSS size so width looks consistent immediately
       document.querySelectorAll('.page .sheet canvas').forEach((cv)=>{
         const pn = parseInt(cv.id.replace('p',''),10);
         const meta = pageMetaCache[pn];
-        const cssH = meta ? Math.round(baselineW * (meta.h/meta.w)) : Math.round(baselineW / pageAspect);
+        const cssH = meta ? Math.round(baselineW * (meta.h/meta.w)) : Math.round(baselineW / (pageAspect||0.707));
         cv.style.width = baselineW + 'px';
         cv.style.height = cssH + 'px';
-        cv.dataset.rendered = '0'; // force re-render on next visibility
+        cv.dataset.rendered = '0';
       });
     }
 
@@ -125,10 +113,8 @@
       const vh = getVVHeight();
       const topH = topbarEl ? topbarEl.offsetHeight : 0;
       const bottomMargin = 80;
-
-      const widthPortrait = vw; // fill width
+      const widthPortrait = vw;
       const widthLandscape = Math.min(vw, Math.max(160, (vh - topH - bottomMargin) * (pageAspect || 0.707)));
-
       return Math.min(1200, Math.max(160, (vh >= vw) ? widthPortrait : widthLandscape));
     }
 
@@ -142,69 +128,69 @@
 
     function updateFixedPositions(){
       const vv = window.visualViewport;
-      if (!vv){ return; }
+      if (!vv) return;
       const x = vv.offsetLeft || 0, y = vv.offsetTop || 0, scale = vv.scale || 1;
-      // translate to viewport and keep constant size with inverse scale
       topbarEl.style.transform = `translate(${x}px, ${y}px) scale(${1/scale})`;
       const progressEl = document.getElementById('progress');
       progressEl.style.transform = `translate(${x}px, -3px) scale(${1/scale})`;
     }
 
-    // ---------- Build skeleton ----------
     function snapshotWidth(){ lastVVW = getVVWidth(); setPageWidth(computeFitWidth()); }
-
-    // tap on page toggles chrome
-    pagesEl.addEventListener('click', (e)=>{
-      if (drawer.contains(e.target) || topbarEl.contains(e.target)) return;
-      toggleBars();
-    });
-
-    // menu/drawer
+    pagesEl.addEventListener('click', (e)=>{ if (drawer.contains(e.target) || topbarEl.contains(e.target)) return; toggleBars(); });
     menuBtn.addEventListener('click', ()=>{ drawer.classList.add('open'); overlay.classList.add('show'); });
     overlay.addEventListener('click', ()=>{ drawer.classList.remove('open'); overlay.classList.remove('show'); });
+    resetFitBtn.addEventListener('click', ()=>{ setPageWidth(computeFitWidth()); rerenderVisible(); window.scrollTo({top:0, behavior:'smooth'}); });
 
-    // Reset button — one button, auto-detects current orientation and refits
-    resetFitBtn.addEventListener('click', ()=>{
-      setPageWidth(computeFitWidth());
-      rerenderVisible();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-
-    // ---------- PDF bootstrap ----------
     snapshotWidth();
-    pdfjsLib.getDocument(PDF_URL).promise.then(async (pdf)=>{
-      pdfDoc = pdf; totalPages = pdf.numPages;
 
-      // build DOM without per-page captions (we removed page numbers between pages)
-      for (let i=1;i<=totalPages;i++){
+    // FAST preflight: only first page meta
+    async function preflightMetasLite(){
+      try{
+        const m1 = await ensurePageMeta(1);
+        pageAspect = (m1 && m1.w && m1.h) ? (m1.w / m1.h) : pageAspect;
+        // set placeholder heights for all holders based on pageAspect
+        document.querySelectorAll('.page .sheet').forEach(sh=>{
+          sh.style.height = Math.round(baselineW * (1 / (pageAspect || 0.707))) + 'px';
+        });
+        // refit once with exact aspect
+        setPageWidth(computeFitWidth());
+      }catch(e){ console.warn('preflight error', e); }
+    }
+
+    // build skeleton quickly (no captions page numbers)
+    function buildSkeleton(n){
+      const frag = document.createDocumentFragment();
+      for (let i=1;i<=n;i++){
         const holder = document.createElement('div'); holder.className = 'page'; holder.dataset.page = String(i);
         const sheet = document.createElement('div'); sheet.className = 'sheet';
         const canvas = document.createElement('canvas'); canvas.id = 'p'+i; sheet.appendChild(canvas);
         holder.appendChild(sheet);
-        pagesEl.appendChild(holder);
+        frag.appendChild(holder);
       }
-
-      await preflightMetas(); // set skeleton heights quickly
-      observeAndRender();
-
-      // update aspect from first page
-      if (pageMetaCache[1]){
-        const m = pageMetaCache[1]; if (m && m.w && m.h){ pageAspect = m.w/m.h; }
-      }
-      // refit width once more using exact aspect
-      setPageWidth(computeFitWidth());
-    }).catch(err=> console.error('PDF load error:', err));
-
-    async function preflightMetas(){
-      for (let i=1;i<= (pdfDoc ? pdfDoc.numPages : 0); i++){
-        if (!pageMetaCache[i]){
-          const meta = await ensurePageMeta(i);
-          const sheet = document.querySelector('[data-page="'+i+'"] .sheet');
-          if (sheet){ sheet.style.height = Math.round(baselineW * (meta.h/meta.w)) + 'px'; }
-          await new Promise(r=>setTimeout(r,0));
-        }
-      }
+      pagesEl.appendChild(frag);
     }
+
+    // PDF bootstrap
+    (async function init(){
+      try{
+        pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise;
+        totalPages = pdfDoc.numPages;
+        buildSkeleton(totalPages);
+        await preflightMetasLite();
+        observeAndRender();
+        // spinner safety: if first page not visible in 5s, inform user but keep trying
+        firstRenderTimer = setTimeout(()=>{
+          if (!spinner.classList.contains('hidden')){
+            spinText.textContent = 'Долго загружается… Если видите это сообщение более 10 секунд, проверьте PDF-файл и соединение.';
+          }
+        }, 5000);
+      }catch(err){
+        console.error('PDF load error:', err);
+        spinText.textContent = 'Не удалось загрузить PDF. Проверьте имя файла и путь: History_Climate.pdf';
+        // still hide spinner background after short pause so page remains usable
+        setTimeout(()=> spinner.classList.add('hidden'), 1500);
+      }
+    })();
 
     async function ensurePageMeta(pageNum){
       if (pageMetaCache[pageNum]) return pageMetaCache[pageNum];
@@ -216,7 +202,7 @@
       return meta;
     }
 
-    let io = null;
+    let io=null;
     function observeAndRender(){
       if (io) io.disconnect();
       io = new IntersectionObserver(async (entries)=>{
@@ -240,7 +226,6 @@
       const pxH = Math.floor(cssH * eff);
 
       if (renderTasks[pageNum]){ try{ renderTasks[pageNum].cancel(); }catch(e){} }
-
       if (canvas.width !== pxW || canvas.height !== pxH){ canvas.width = pxW; canvas.height = pxH; }
       canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
 
@@ -257,6 +242,7 @@
       finally{ canvas.dataset.rendering = '0'; if (renderTasks[pageNum] === task) delete renderTasks[pageNum]; }
 
       if (pageNum === 1 && spinner && !spinner.classList.contains('hidden')){
+        clearTimeout(firstRenderTimer); firstRenderTimer = null;
         spinner.classList.add('hidden');
       }
       updateProgress();
@@ -277,28 +263,19 @@
       });
     }
 
-    // viewport change handling (rotation, chrome changes, pinch zoom)
     function onVVChange(){
       const vv = window.visualViewport;
       const nowW = vv ? vv.width : document.documentElement.clientWidth;
       const nowScale = vv ? vv.scale : 1;
       const widthDelta = Math.abs(nowW - lastVVW);
       const scaleDelta = Math.abs((nowScale || 1) - (lastScale || 1));
-
       lastVVW = nowW; lastScale = nowScale;
-
-      if (widthDelta > 120){
-        setPageWidth(computeFitWidth());
-        rerenderVisible();
-        updateFixedPositions();
-      }else if (scaleDelta > 0.02){
-        rerenderVisible();
-        updateFixedPositions();
-      }
+      if (widthDelta > 120){ setPageWidth(computeFitWidth()); rerenderVisible(); updateFixedPositions(); }
+      else if (scaleDelta > 0.02){ rerenderVisible(); updateFixedPositions(); }
     }
 
     if (window.visualViewport){
-      const schedule = (()=>{ let raf=0; return ()=>{ if (raf) return; raf = requestAnimationFrame(()=>{ raf = 0; onVVChange(); }); }; })();
+      const schedule = (()=>{ let raf=0; return ()=>{ if (raf) return; raf = requestAnimationFrame(()=>{ raf=0; onVVChange(); }); }; })();
       window.visualViewport.addEventListener('resize', schedule);
       window.visualViewport.addEventListener('scroll', schedule);
       window.visualViewport.addEventListener('resize', updateFixedPositions);
