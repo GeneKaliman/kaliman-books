@@ -30,6 +30,9 @@
       display: flex; align-items: center; gap: 12px;
       padding: env(safe-area-inset-top) 12px 12px 12px;
       backdrop-filter: var(--bar-blur); background: var(--bar);
+      /* Ensure the menu remains responsive even when transformed/scaled. Explicitly enable
+         pointer events so touches are still captured in pinch‑zoom mode. */
+      pointer-events: auto;
     }
     .btn { border: 0; border-radius: 12px; padding: 8px 12px; background: rgba(255,255,255,0.06); color: var(--fg); font-size: 16px; cursor: pointer; }
     .btn:active { background: rgba(255,255,255,0.1); }
@@ -37,10 +40,15 @@
 
     .pages { position: relative; width: 100%; max-width: 1200px; margin: 0 auto;
       padding-top: calc(48px + env(safe-area-inset-top)); padding-bottom: 24px; }
-    .page { display: grid; place-items: center; margin: 12px auto; width: 100%; position: relative; }
+    /*
+      Each page container no longer centers itself horizontally; margin-left and margin-right are
+      zero so that odd and even pages align uniformly. A vertical margin of 12px separates pages.
+      Previously the `auto` horizontal margin sometimes produced visually different side margins.
+    */
+    .page { display: grid; place-items: center; margin: 12px 0; width: 100%; position: relative; }
     .sheet { width: var(--pageW); }
     .sheet canvas { display: block; background: var(--pagebg); box-shadow: 0 6px 26px rgba(0,0,0,0.36); }
-    .pnum { margin-top: 6px; font-size: 12px; color: var(--muted); user-select: none; /* Hide page numbers below each page */ display: none; }
+    .pnum { margin-top: 6px; font-size: 12px; color: var(--muted); user-select: none; }
 
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1200; opacity: 0; pointer-events: none; transition: opacity .2s; }
     .overlay.show { opacity: 1; pointer-events: auto; }
