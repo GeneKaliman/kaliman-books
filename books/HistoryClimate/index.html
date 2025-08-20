@@ -138,10 +138,23 @@
         </a>
       </div>
       <div class="links-vertical">
-        <!-- Clicking this link triggers device detection at click time to
-             choose the appropriate reader. The default href is left as # so
-             browsers don't navigate prematurely. -->
-        <a id="onlineReadLink" href="#" onclick="return handleReadClick(event)">📖 Читать онлайн</a>
+        <!-- Clicking this link triggers device detection to choose the appropriate reader. The inline onclick
+             handler computes whether the device is mobile (based on UA Client Hints, pointer type or
+             viewport width) and navigates accordingly. Returning false prevents the default link action. -->
+        <!-- The "Читать онлайн" link detects whether the user is on a mobile device when clicked.  It first checks
+             UA Client Hints (navigator.userAgentData.mobile).  If that's not available, it falls back to
+             matching common mobile keywords in the userAgent string (Mobi, Android, iPhone, etc.).  As a final
+             fallback, it checks the smaller dimension of the viewport (width or height) and classifies
+             anything under 900px as mobile.  Based on this determination, it navigates to the appropriate
+             reader: the scrolling viewer for mobile or the standard paginated reader for desktop.  The
+             "return false" prevents the default link behavior so that our custom navigation can run. -->
+        <a href="#"
+           onclick="var navUA = navigator.userAgent || ''; var navData = navigator.userAgentData; var isMobile = false; if (navData && typeof navData.mobile === 'boolean') { isMobile = navData.mobile; } else { isMobile = /Mobi|Android|iPhone|iPad|iPod|Phone/i.test(navUA); } // If still not classified as mobile, fall back to viewport width: widths under 900px are considered mobile
+                    if (!isMobile) {
+                      var viewportW = window.innerWidth || document.documentElement.clientWidth;
+                      if (viewportW && viewportW < 900) { isMobile = true; }
+                    }
+                    window.location.href = isMobile ? 'books/HistoryClimate/reader_browser_scrolling.html' : 'books/HistoryClimate/read.html'; return false;">📖 Читать онлайн</a>
         <a href="books/HistoryClimate/History_Climate.pdf" download>⬇️ Скачать книгу (PDF)</a>
         <a href="books/HistoryClimate/read.html#comments">💬 Оставить комментарий</a>
         <a href="books/HistoryClimate/Readme.html">ℹ️ Описание книги</a>
@@ -149,33 +162,6 @@
     </div>
   </div>
 
-  <script>
-    // Handle the click on the online reading link. When activated, this function
-    // determines whether the device is mobile or desktop and directs the user
-    // to the appropriate reading interface. Detection occurs at click time to
-    // ensure it works regardless of script load order.
-    function handleReadClick(event) {
-      event = event || window.event;
-      if (event && event.preventDefault) event.preventDefault();
-      // Determine if we should treat the current device as mobile
-      var isMobile = false;
-      if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
-        isMobile = navigator.userAgentData.mobile;
-      } else if (window.matchMedia) {
-        // Touch-friendly pointer or a smaller screen qualifies as mobile
-        var coarse = window.matchMedia('(pointer: coarse)').matches;
-        var smallScreen = window.matchMedia('(max-width: 900px)').matches;
-        isMobile = coarse || smallScreen;
-      } else {
-        // Fallback to screen size
-        var w = Math.min(window.innerWidth || document.documentElement.clientWidth, window.innerHeight || document.documentElement.clientHeight);
-        isMobile = w < 900;
-      }
-      var target = isMobile ? 'books/HistoryClimate/reader_browser_scrolling.html' : 'books/HistoryClimate/read.html';
-      window.location.href = target;
-      return false;
-    }
-  </script>
-
+  <!-- Removed the external click handler script as the detection is now handled inline -->
 </body>
 </html>
