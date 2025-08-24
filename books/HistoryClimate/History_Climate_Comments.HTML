@@ -7,16 +7,10 @@
   <meta name="color-scheme" content="light dark" />
   <style>
     :root { --font-base: 18px; --page-w: 1100px; --card-pad: 14px; }
-    body {
-      font-family: Arial, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      font-size: var(--font-base); line-height: 1.7;
-      max-width: var(--page-w); margin: 12px auto; padding: 12px;
-      background: #f9f9f9; color: #222;
-    }
+    body { font-family: Arial, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: var(--font-base); line-height: 1.7; max-width: var(--page-w); margin: 12px auto; padding: 12px; background: #f9f9f9; color: #222; }
     h1 { text-align: center; margin: 0 0 14px; font-size: calc(var(--font-base)*1.7); line-height: 1.25; letter-spacing: .2px; }
     .muted { opacity: .85; }
     .card { background:#fff; padding:var(--card-pad); border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
-
     .layout { display:grid; grid-template-columns: 1.2fr .8fr; gap:18px; align-items:start; }
 
     label { display:block; margin:.65rem 0 .35rem; font-size:calc(var(--font-base)*.95); }
@@ -26,39 +20,17 @@
     .row { display:flex; gap:14px; flex-wrap:wrap; }
     .row > * { flex:1 1 240px; }
 
-    button, .btn {
-      display:inline-block; border:1px solid #111; border-radius:999px;
-      padding:12px 18px; background:#111; color:#fff; cursor:pointer; text-decoration:none;
-    }
+    button, .btn { display:inline-block; border:1px solid #111; border-radius:999px; padding:12px 18px; background:#111; color:#fff; cursor:pointer; text-decoration:none; }
     button:hover, .btn:hover { filter:brightness(1.06); }
 
     .hint { background:#fafafa; border:1px dashed #ccc; border-radius:10px; padding:12px; margin-top:12px; }
     .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0; }
 
-    .rules-list { margin:.3rem 0 0; padding-left:1.1rem; }
-    .rules-list li { margin:.35rem 0; }
-
     /* Fade animation */
-    #commentForm {
-      transition: opacity 0.6s ease, height 0.6s ease;
-    }
-    #commentForm.hidden {
-      opacity:0;
-      pointer-events:none;
-      height:0;
-      overflow:hidden;
-    }
-    .success {
-      display:none;
-      opacity:0;
-      margin-top:14px; padding:14px;
-      background:#ebffe9; border:1px solid #96d190; border-radius:12px;
-      transition: opacity 0.6s ease;
-    }
-    .success.show {
-      display:block;
-      opacity:1;
-    }
+    #commentForm { transition: opacity 0.6s ease, height 0.6s ease; }
+    #commentForm.hidden { opacity:0; pointer-events:none; height:0; overflow:hidden; }
+    .success { display:none; opacity:0; margin-top:14px; padding:14px; background:#ebffe9; border:1px solid #96d190; border-radius:12px; transition: opacity 0.6s ease; }
+    .success.show { display:block; opacity:1; }
     .success h3 { margin:0 0 8px; font-size: calc(var(--font-base)*1.05); }
     .success .actions { margin-top:10px; display:flex; gap:10px; flex-wrap:wrap; }
 
@@ -80,8 +52,8 @@
         Отправьте комментарий. Мы просматриваем все сообщения и публикуем одобренные.
       </p>
 
-      <!-- ✅ fixed endpoint -->
-      <form id="commentForm" action="https://formspree.io/f/manbprkr" method="POST">
+      <!-- ✅ FIXED: правильный endpoint -->
+      <form id="commentForm" action="https://formspree.io/f/manbrpkr" method="POST">
         <input type="hidden" name="_replyto" value="kalimanbooks@gmail.com">
         <input type="hidden" name="_subject" value="Новый комментарий к книге">
         <input type="hidden" name="file" value="От каменного века до века железа">
@@ -106,6 +78,7 @@
         <textarea id="message" name="message" required maxlength="5000"
           placeholder="Коротко и по делу (до 5000 символов)"></textarea>
 
+        <!-- honeypot -->
         <label class="sr-only" for="_gotcha">Оставьте это поле пустым</label>
         <input id="_gotcha" type="text" name="_gotcha" style="display:none" autocomplete="off" tabindex="-1" aria-hidden="true">
 
@@ -114,7 +87,7 @@
         </div>
 
         <p style="margin-top:16px">
-          <button type="submit">Отправить комментарий</button>
+          <button id="submitBtn" type="submit">Отправить комментарий</button>
         </p>
       </form>
 
@@ -130,7 +103,7 @@
 
     <div class="card">
       <h2 style="margin:.2rem 0 .6rem;font-size:calc(var(--font-base)*1.05);color:#222;text-align:center">Правила</h2>
-      <ul class="rules-list muted">
+      <ul class="rules-list muted" style="margin:.3rem 0 0; padding-left:1.1rem;">
         <li>По теме и уважительно; без оскорблений и разглашения личных данных.</li>
         <li>Без рекламы; ссылки — по усмотрению модератора.</li>
         <li>Максимум 5000 символов; возможна лёгкая правка для ясности.</li>
@@ -145,39 +118,55 @@
     const form = document.getElementById('commentForm');
     const successBox = document.getElementById('successBox');
     const anotherBtn = document.getElementById('anotherBtn');
+    const submitBtn = document.getElementById('submitBtn');
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      // Prevent double-submit (Formspree recommendation)
+      submitBtn.disabled = true;
+      submitBtn.setAttribute('aria-busy', 'true');
+
       const data = new FormData(form);
       try {
         const res = await fetch(form.action, {
-          method: 'POST',
+          method: form.method,
           body: data,
-          headers: { 'Accept': 'application/json' }
+          headers: { 'Accept': 'application/json' } // required by Formspree AJAX guide
         });
+
         if (res.ok) {
           form.reset();
           form.classList.add('hidden');
           successBox.classList.add('show');
           successBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
         } else {
+          // Try to show helpful validation text from Formspree
           let msg = `Ошибка ${res.status}`;
           try {
             const j = await res.json();
-            if (j && j.errors && j.errors[0] && j.errors[0].message) {
-              msg += `: ${j.errors[0].message}`;
+            if (j && j.errors && j.errors.length) {
+              msg += ': ' + j.errors.map(e => e.message).join('; ');
             }
           } catch (_) {}
           alert(msg);
         }
       } catch (err) {
         alert('Сеть недоступна. Попробуйте позже.');
+      } finally {
+        // Re-enable if form is still visible (i.e., on error)
+        if (!successBox.classList.contains('show')) {
+          submitBtn.disabled = false;
+          submitBtn.removeAttribute('aria-busy');
+        }
       }
     });
 
     anotherBtn.addEventListener('click', () => {
       successBox.classList.remove('show');
       form.classList.remove('hidden');
+      submitBtn.disabled = false;
+      submitBtn.removeAttribute('aria-busy');
       document.getElementById('from').focus();
     });
   </script>
