@@ -53,7 +53,11 @@
         Отправьте комментарий. Мы просматриваем все сообщения и публикуем одобренные.
       </p>
 
-      <form action="https://formspree.io/f/manbrpkr" method="POST">
+      <form action="https://formspree.io/f/YOUR_FORM_ID" method="POST">
+        <!-- фиксированный отправитель/тема для лучшей доставляемости -->
+        <input type="hidden" name="_replyto" value="kalimanbooks@gmail.com">
+        <input type="hidden" name="_subject" value="Новый комментарий к книге">
+        <!-- контекст и редирект -->
         <input type="hidden" name="file" value="От каменного века до века железа">
         <input type="hidden" name="_redirect" value="/kaliman-books/spasibo.html">
 
@@ -61,7 +65,7 @@
         <div class="row">
           <div>
             <label for="from">От кого (необязательно)</label>
-            <input id="from" name="from" maxlength="60" placeholder="Например: «Анна, Сан-Диего»">
+            <input id="from" name="user_name" maxlength="60" placeholder="Например: «Анна, Сан-Диего»">
           </div>
           <div>
             <label for="page">Номер страницы (необязательно)</label>
@@ -79,9 +83,9 @@
         <textarea id="message" name="message" required maxlength="5000"
           placeholder="Коротко и по делу (до 5000 символов)"></textarea>
 
-        <!-- honeypot -->
+        <!-- honeypot: чтобы менеджеры паролей его не трогали -->
         <label class="sr-only" for="_gotcha">Оставьте это поле пустым</label>
-        <input id="_gotcha" type="text" name="_gotcha" style="display:none">
+        <input id="_gotcha" type="text" name="_gotcha" style="display:none" autocomplete="off" tabindex="-1" aria-hidden="true">
 
         <div class="hint">
           Подсказки: укажите страницу/раздел; максимум одна релевантная ссылка; без личных данных.
